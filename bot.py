@@ -36,7 +36,8 @@ async def commands(ctx):
 2. **!admins** - Shows a list of currently online admins.
 3. **!testers** - Lists all logged-in testers.
 4. **!check FirstName_LastName** - Checks if the specified player is currently online.
-5. **!serbians** - Displays the current status of members of the STCO (alive/dead). This will be removed once the war is over.
+5. **!war** - Displays the current status of members of the STCO (alive/dead). This will be removed once the war is over.
+6. **!serbians** - Displays all logged in serbians who are still alive."
 """
 
     embed.description = helpMessage.strip()  # Use strip() to remove any extra leading/trailing whitespace
@@ -204,10 +205,6 @@ async def check(ctx, name: str):
     player_data = load_player_data()
     embed = discord.Embed(title="Player Status Check", color=discord.Color.red())
     characters = [player["characterName"] for player in player_data.get("players", [])]
-
-    if not name: #Check if name is None or an empty string.
-        await ctx.send("Wrong format. Use Firstname_Lastname if you want the bot to work.")
-        return
     
     if "_" not in name:  # Check if name contains '_'
         await ctx.send("Wrong format. Use Firstname_Lastname if you want the bot to work.")

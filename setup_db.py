@@ -25,7 +25,7 @@ def login_ucp():
     options.add_argument('--no-sandbox')  # Allows running as root
     options.add_argument('--disable-dev-shm-usage')
 
-    driver = uc.Chrome(headless = False,use_subprocess=True)
+    driver = uc.Chrome(headless = True,use_subprocess=True)
     driver.execute_script('''window.open("https://ucp.ls-rp.com/","_blank");''') # open page in new ta
     print('Opened Chrome, initiating now.')
     time.sleep(5) # wait until page has loaded
