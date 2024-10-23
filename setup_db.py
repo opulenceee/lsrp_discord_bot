@@ -111,7 +111,7 @@ def main():
 
     if driver:
         try:
-            refresh_interval = 30  
+            refresh_interval = 15  
             
             while True:  
                 success = fetch_and_save_json_data(driver)  

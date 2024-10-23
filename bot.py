@@ -29,7 +29,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
   #List of online Serbians
 serbians = [
-        "Vahan Kalajian",
         "Slobodan Milovanovic",
         "David Komljenovic",
         "Vuksan Adzic",
@@ -47,12 +46,12 @@ serbians = [
         "Goran Strahota",
         "Nemanja Stojkovic",
         "Dragomir Sarovic",
-        "Antonije Simic"
     ]
 
 last_online_status = {}
 
 async def check_for_serbians_online():
+    print("check_for_serbians_online has been called")  # Debugging line
     global last_online_status
     
     # Initialize last_online_status if it's empty (first run)
@@ -62,13 +61,14 @@ async def check_for_serbians_online():
     player_data = load_player_data()
     online_players = [player["characterName"] for player in player_data.get("players", [])]
     channel = bot.get_channel(NOTIFICATION_CHANNEL_ID)
-
+    
     if channel is None:
         print(f"Failed to retrieve channel with ID {NOTIFICATION_CHANNEL_ID}")
         return  # Ensure the bot is fetching the right channel
 
     for serbian in serbians:
         serbian_formatted = serbian.replace(" ", "_")
+        print(f"Checking player: {serbian_formatted}")  # Debugging line 
 
         if serbian_formatted in online_players and not last_online_status[serbian_formatted]:
             await channel.send(f"@everyone {serbian} has just logged in!")
@@ -135,7 +135,7 @@ async def war(ctx):
         "Goran Strahota",
         "Nemanja Stojkovic",
         "Dragomir Sarovic",
-        "Antonije Simic",
+        "Antonije Simic - DEAD",
         "Marko Pajic - DEAD",
         "Milorad Pajic - DEAD",
         "Bosko Brankovic - DEAD",
@@ -148,7 +148,7 @@ async def war(ctx):
 
     for person in people:
         if "DEAD" in person:
-            dead.append(person.replace(" ", ""))
+            dead.append(person)
         else:
             alive.append(person)
 
@@ -257,14 +257,16 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
     embed.description = response  # Set the response in the embed description
     await ctx.send(embed=embed)  # Send the embed message
 
+process = None
 
 async def update_player_list():
-    while True:
-        await asyncio.sleep(30)  # Wait for 30 seconds
-        loop = asyncio.get_running_loop()
+    global process
+    if process is None:
+       process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
         # Run your setup_db.py script without blocking
-        await loop.run_in_executor(None, subprocess.run, ['/opt/lsrp/venv/bin/python', 'setup_db.py'])
-        await check_for_serbians_online()
+    while True:
+        await asyncio.sleep(15)  # Continue to wait 30 seconds
+        await check_for_serbians_online()  # Just check for online players, no subprocess needed
 
 @bot.event
 async def on_ready():
