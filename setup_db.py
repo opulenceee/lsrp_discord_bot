@@ -24,7 +24,7 @@ def login_ucp():
     options.add_argument('--no-sandbox')  # Allows running as root
     options.add_argument('--disable-dev-shm-usage')
 
-    driver = uc.Chrome(headless = True,use_subprocess=True)
+    driver = uc.Chrome(headless = False,use_subprocess=True)
     driver.execute_script('''window.open("https://ucp.ls-rp.com/","_blank");''') # open page in new ta
     print('Opened Chrome, initiating now.')
     time.sleep(5) # wait until page has loaded
@@ -79,10 +79,10 @@ def login_ucp():
 
 def fetch_and_save_json_data(driver):
     time.sleep(5)
-    
+
     # Fetch the body text which contains the JSON data
     body_text = driver.find_element(By.TAG_NAME, 'body').text
-    
+
     print("Body text received:")
     print(body_text)  # DEBUG: Show the raw response for inspection
 
@@ -90,34 +90,33 @@ def fetch_and_save_json_data(driver):
         # Parse the body text as JSON
         json_data = json.loads(body_text)
 
-        # Save the parsed JSON data to a file
-        with open('player_list.json', 'w') as json_file:
+        # Ensure the 'data' directory exists
+        os.makedirs('data', exist_ok=True)  # Create 'data' directory if it doesn't exist
+
+        # Save the parsed JSON data to a file in the 'data' directory
+        with open('data/player_list.json', 'w') as json_file:
             json.dump(json_data, json_file, indent=4)
-        print("Player list data saved to player_list.json")
+        print("Player list data saved to data/player_list.json")
     except json.JSONDecodeError as e:
         print(f"Failed to decode JSON: {e}")
         return False  # Indicate a failure in fetching/parsing JSON data
 
     return True  # Indicate success
-
-
 def refresh_page(driver):
-    print("Refreshing the page...")
-    driver.refresh()  # just refreshing api page
-
+    """Refresh both the API and forum pages."""
+    print("Refreshing the pages...")
+    driver.refresh()  # Refresh API page
+    
 
 def main():
     driver = login_ucp()
-
     if driver:
         try:
-            refresh_interval = 15  
-            
-            while True:  
+            refresh_interval = 15  # Refresh interval in seconds
+            while True:
                 success = fetch_and_save_json_data(driver)  
-                
                 if success:
-                    print("Data fetched and saved successfully.")
+                    print("Data fetched and saved successfully from UCP.")
                 else:
                     print("Data fetching failed. Retrying after refresh.")
                 time.sleep(refresh_interval)

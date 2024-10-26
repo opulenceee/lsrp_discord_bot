@@ -1,26 +1,26 @@
 {
-    "syncTime": "2024-10-23T10:06:36.595Z",
+    "syncTime": "2024-10-26T10:27:05.467Z",
     "players": [
         {
-            "accountName": "Jockstrap",
-            "characterName": "Matthew_Donnelly",
-            "isAdmin": false,
+            "accountName": "Drumj",
+            "characterName": "Jord_Drum",
+            "isAdmin": true,
             "isTester": false,
             "isDeveloper": false,
-            "isPremium": true,
+            "isPremium": false,
             "hideAccountName": false,
             "isPolice": false,
             "isMedic": false
         },
         {
-            "accountName": "rising_dust",
-            "characterName": "Vicente_Salazar",
+            "accountName": "xRandomGuy",
+            "characterName": "Jayden_Gibson",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
-            "isPremium": true,
+            "isPremium": false,
             "hideAccountName": false,
-            "isPolice": false,
+            "isPolice": true,
             "isMedic": false
         },
         {
@@ -35,21 +35,21 @@
             "isMedic": false
         },
         {
-            "accountName": "ScubaStef",
-            "characterName": "Tyler_Bouc",
-            "isAdmin": true,
+            "accountName": "myhomiepear",
+            "characterName": "Laura_Keenan",
+            "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
-            "isPremium": true,
+            "isPremium": false,
             "hideAccountName": false,
-            "isPolice": true,
+            "isPolice": false,
             "isMedic": false
         },
         {
-            "accountName": "Biscanin",
-            "characterName": "Erhard_Lutze",
-            "isAdmin": false,
-            "isTester": true,
+            "accountName": "JesterJr",
+            "characterName": "Larry_Papadopoulos",
+            "isAdmin": true,
+            "isTester": false,
             "isDeveloper": false,
             "isPremium": false,
             "hideAccountName": false,
@@ -68,19 +68,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Spanion",
-            "characterName": "Jimmy_Wang",
-            "isAdmin": true,
-            "isTester": false,
-            "isDeveloper": false,
-            "isPremium": false,
-            "hideAccountName": false,
-            "isPolice": false,
-            "isMedic": false
-        },
-        {
-            "accountName": "Hardwick",
-            "characterName": "Benjamin_Williams",
+            "accountName": "Paagh98",
+            "characterName": "Frank_Greenwill",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -90,8 +79,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Frank_Alnadhiry",
-            "characterName": "Callista_Khalifa",
+            "accountName": "buq",
+            "characterName": "John_Sleator",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -101,19 +90,19 @@
             "isMedic": false
         },
         {
-            "accountName": "Yamagucci",
-            "characterName": "Ailana_Yamaguchi",
+            "accountName": "barney",
+            "characterName": "Wade_Snyder",
             "isAdmin": false,
-            "isTester": false,
+            "isTester": true,
             "isDeveloper": false,
-            "isPremium": true,
+            "isPremium": false,
             "hideAccountName": false,
             "isPolice": false,
             "isMedic": false
         },
         {
-            "accountName": "Tinoo",
-            "characterName": "Terry_Colon",
+            "accountName": "GuilhemP",
+            "characterName": "Matias_Osorio",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -123,8 +112,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Saraaa",
-            "characterName": "Nathalie_Hyde",
+            "accountName": "Angellify",
+            "characterName": "Raimy_Grant",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -134,19 +123,8 @@
             "isMedic": false
         },
         {
-            "accountName": "MisterZiborg",
-            "characterName": "Latrell_Ridley",
-            "isAdmin": false,
-            "isTester": false,
-            "isDeveloper": false,
-            "isPremium": false,
-            "hideAccountName": false,
-            "isPolice": false,
-            "isMedic": false
-        },
-        {
-            "accountName": "Elijah_Young",
-            "characterName": "Clifton_Barksdale",
+            "accountName": "Arthur_Langbury",
+            "characterName": "Arthur_Langbury",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -167,8 +145,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Aaron_Hank",
-            "characterName": "Aaron_Hank",
+            "accountName": "Shawn_Weckman",
+            "characterName": "Nicholas_Cerreta",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -178,8 +156,8 @@
             "isMedic": false
         },
         {
-            "accountName": "MyNameIs",
-            "characterName": "Caleb_Burnett",
+            "accountName": "Bagsy",
+            "characterName": "Donny_Moore",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -189,25 +167,14 @@
             "isMedic": false
         },
         {
-            "accountName": "ililiiilil",
-            "characterName": "Camila_Dupont",
+            "accountName": "MateoRodriguez",
+            "characterName": "Jonathan_Blair",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
             "isPremium": false,
             "hideAccountName": false,
-            "isPolice": false,
-            "isMedic": false
-        },
-        {
-            "accountName": "EZY",
-            "characterName": "Amelia_Ross",
-            "isAdmin": false,
-            "isTester": false,
-            "isDeveloper": false,
-            "isPremium": false,
-            "hideAccountName": false,
-            "isPolice": false,
+            "isPolice": true,
             "isMedic": false
         },
         {
@@ -233,8 +200,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Vladimir_Gabrinski",
-            "characterName": "Matthew_Kaufman",
+            "accountName": "Stechkina11",
+            "characterName": "Andrew_Pulcino",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -244,8 +211,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Rodricaz",
-            "characterName": "Lamar_Rodricaz",
+            "accountName": "Trell.",
+            "characterName": "Nicollo_Fibonacci",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -255,8 +222,85 @@
             "isMedic": false
         },
         {
-            "accountName": "GarrySF",
-            "characterName": "Oman_Carter",
+            "accountName": "TyDolla",
+            "characterName": "Lamont_Johnson",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "LevIxion",
+            "characterName": "Lukas_Weber",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "Humberto_Moravia",
+            "characterName": "Eric_Asaki",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "STROCK",
+            "characterName": "Cristopher_Bryant",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "Stratum",
+            "characterName": "Jamie_Bennett",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "ChepeSanta",
+            "characterName": "Jose_Santacruz",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": true,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "Njubara13",
+            "characterName": "Buck_Walton",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "xtroDe",
+            "characterName": "Alex_Ford",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -277,8 +321,8 @@
             "isMedic": false
         },
         {
-            "accountName": "Jayskiii",
-            "characterName": "Herbert_Webb",
+            "accountName": "Kirill123",
+            "characterName": "Enrique_Dolores",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -288,25 +332,36 @@
             "isMedic": false
         },
         {
-            "accountName": "Kosya",
-            "characterName": "Corbin_Keller",
+            "accountName": "Patrik_Kragh",
+            "characterName": "Marlon_Jennings",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": true,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "BrendanLSRP",
+            "characterName": "April_Marie",
+            "isAdmin": false,
+            "isTester": false,
+            "isDeveloper": false,
+            "isPremium": false,
+            "hideAccountName": false,
+            "isPolice": false,
+            "isMedic": false
+        },
+        {
+            "accountName": "Bransler",
+            "characterName": "Rhett_Lawson",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
             "isPremium": false,
             "hideAccountName": false,
             "isPolice": true,
-            "isMedic": false
-        },
-        {
-            "accountName": "PabloHD",
-            "characterName": "Andre_Hogan",
-            "isAdmin": false,
-            "isTester": false,
-            "isDeveloper": false,
-            "isPremium": false,
-            "hideAccountName": false,
-            "isPolice": false,
             "isMedic": false
         },
         {
@@ -321,19 +376,19 @@
             "isMedic": false
         },
         {
-            "accountName": "Hreesang",
-            "characterName": "Billy_Tapia",
+            "accountName": "alwaysthankful",
+            "characterName": "Kemani_Townsend",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
-            "isPremium": false,
+            "isPremium": true,
             "hideAccountName": false,
-            "isPolice": true,
+            "isPolice": false,
             "isMedic": false
         },
         {
-            "accountName": "AidenJacks",
-            "characterName": "Vance_Vega",
+            "accountName": "cjredmond",
+            "characterName": "Calvin_Redmond",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -343,8 +398,8 @@
             "isMedic": false
         },
         {
-            "accountName": "udprand",
-            "characterName": "Rontay_Edwards",
+            "accountName": "Turok",
+            "characterName": "Jack_Wolf",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -354,8 +409,8 @@
             "isMedic": false
         },
         {
-            "accountName": "STROCK",
-            "characterName": "Othmane_Belkacem",
+            "accountName": "LuigiBagio",
+            "characterName": "Mark_Stevens",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -365,8 +420,8 @@
             "isMedic": false
         },
         {
-            "accountName": "G0TTI",
-            "characterName": "David_Xu",
+            "accountName": "HIFIGH",
+            "characterName": "Aiden_Rossa",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
@@ -376,8 +431,8 @@
             "isMedic": false
         },
         {
-            "accountName": "not_Poet",
-            "characterName": "Danny_Holman",
+            "accountName": "arz0n420",
+            "characterName": "Jerry_Dillinger",
             "isAdmin": false,
             "isTester": false,
             "isDeveloper": false,
