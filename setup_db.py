@@ -14,7 +14,7 @@ load_dotenv() # Load environment variables from .env file
 
 UCP_USERNAME = os.getenv('UCP_USERNAME')
 UCP_PASSWORD = os.getenv('UCP_PASSWORD')
-
+SESSION_REFRESH_INTERVAL = 48 * 60 * 60  # 48 hours in seconds
 
 
 def login_ucp():
@@ -24,7 +24,7 @@ def login_ucp():
     options.add_argument('--no-sandbox')  # Allows running as root
     options.add_argument('--disable-dev-shm-usage')
 
-    driver = uc.Chrome(headless = False,use_subprocess=True)
+    driver = uc.Chrome(headless = True,use_subprocess=True)
     driver.execute_script('''window.open("https://ucp.ls-rp.com/","_blank");''') # open page in new ta
     print('Opened Chrome, initiating now.')
     time.sleep(5) # wait until page has loaded
@@ -111,9 +111,22 @@ def refresh_page(driver):
 def main():
     driver = login_ucp()
     if driver:
+        session_start_time = time.time()
         try:
             refresh_interval = 15  # Refresh interval in seconds
             while True:
+                # Check if it's time to refresh the session
+                current_time = time.time()
+                if current_time - session_start_time >= SESSION_REFRESH_INTERVAL:
+                    print("Session has expired. Logging in again.")
+                    driver.quit()
+                    driver = login_ucp()  # Re-login
+                    if not driver:
+                        print("Re-login failed. Exiting.")
+                        break
+                    session_start_time = current_time  # Reset session timer
+                
+                # Fetch and save data
                 success = fetch_and_save_json_data(driver)  
                 if success:
                     print("Data fetched and saved successfully from UCP.")

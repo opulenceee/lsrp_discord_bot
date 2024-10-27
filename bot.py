@@ -335,7 +335,7 @@ async def monitor_replies():
             total_pages = fetch_total_pages(topic_id, FORUMS)
             if total_pages is None or total_pages == 0:
                 print(f"No pages available to monitor for topic ID {topic_id}.")
-                await asyncio.sleep(60)  # Sleep longer if no pages available
+                await asyncio.sleep(240)  # Sleep longer if no pages available
                 continue
 
             last_page_replies = fetch_forum_replies(topic_id, FORUMS, total_pages)
@@ -351,7 +351,7 @@ async def monitor_replies():
                     last_reply_ids[guild_id] = latest_reply_id
                     await send_notification(latest_reply, channel_id)
 
-            await asyncio.sleep(60)  #
+            await asyncio.sleep(240)  #
 
 async def send_notification(new_reply, channel_id):
     """Send a notification to the specified channel when a new reply is detected."""
@@ -393,8 +393,8 @@ async def update_player_list_and_forum_comments():
     global process
     global forum_process
     if process is None and forum_process is None:
-       process = subprocess.Popen(['python', 'setup_db.py'])
-       forum_process = subprocess.Popen(['python','forum_monitor.py'])
+       process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
+       forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python','forum_monitor.py'])
         # Run your setup_db.py script without blocking
 
 

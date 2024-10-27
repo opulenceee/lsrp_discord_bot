@@ -113,7 +113,6 @@ def fetch_forum_replies(topic_id, forums, page):
 
         # Debugging: Print the full response to understand its structure
         data = response.json()
-        print("API Response:", json.dumps(data, indent=4))  # Print formatted response
 
         # Fetch replies from the 'results' key
         return data.get('results', [])  # Return results from the response
