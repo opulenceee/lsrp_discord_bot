@@ -127,12 +127,14 @@ async def commands(ctx):
     embed = discord.Embed(title="Bot Functionality Guide", color=discord.Color.red())
 
     helpMessage = """
-1. **!online** - Displays a list of all logged-in players.
-2. **!admins** - Shows a list of currently online admins.
-3. **!testers** - Lists all logged-in testers.
-4. **!check FirstName_LastName** - Checks if the specified player is currently online.
-5. **!latest** - Displays the last reply on our forum thread and it's author..
-6. **!thread** - Displays how many replies are left for the next page."
+1. **!setup** - Use this command to set the bot up (!setup CHANNEL_ID TOPIC_ID).
+2. **!online** - Displays a list of all logged-in players.
+3. **!admins** - Shows a list of currently online admins.
+4. **!testers** - Lists all logged-in testers.
+5. **!check FirstName_LastName** - Checks if the specified player is currently online.
+6. **!latest** - Displays the last reply on our forum thread and it's author..
+7. **!thread** - Displays how many replies are left for the next page."
+8. **!show_settings** - Shows the current configuration of the bot.
 """
 
     embed.description = helpMessage.strip()  # Use strip() to remove any extra leading/trailing whitespace
