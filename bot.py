@@ -77,6 +77,22 @@ async def setup(ctx, channel_id: int = None, topic_id: str = None):
         bot.loop.create_task(monitor_replies())
         tasks_started = True
 
+
+
+@bot.command()
+async def remove(ctx):
+    server_id = str(ctx.guild.id)
+    server_settings = load_config()
+
+    if server_id in server_settings:
+        del server_settings[server_id]  # Remove the server's settings
+        save_config(server_settings)  # Save updated settings
+        await ctx.send("Configuration removed for this server.")
+    else:
+        await ctx.send("No configuration found for this server.")
+
+
+
 def load_forum_data(topic_id):
     json_file_path = os.path.join(DATA_DIR, f"forum_{topic_id}.json")  # Generate path based on topic_id
     if os.path.exists(json_file_path):
@@ -274,7 +290,7 @@ async def testers(ctx):
         embed.description = "\n".join(tester_names)
     else:
         embed.description = "No testers are currently logged in."
-        
+
     await ctx.send(embed=embed)
 
     
