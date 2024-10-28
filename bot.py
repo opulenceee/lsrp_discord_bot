@@ -23,6 +23,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}  # Return an empty dict if the file doesn't exist.
@@ -40,6 +41,12 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, 'w') as config_file:
         json.dump(config, config_file, indent=4)  # Use indent for readability
+
+
+def is_configured(server_id):
+    server_settings = load_config()
+    return server_id in server_settings
+
 
 @bot.command(name='setup')
 async def setup(ctx, channel_id: int = None, topic_id: str = None):
@@ -179,6 +186,10 @@ async def show_settings(ctx):
     settings = load_config()  # Load existing settings
     guild_id = str(ctx.guild.id)
 
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+
     # Check if settings exist for the guild
     if guild_id in settings:
         notification_channel_id = settings[guild_id].get("notification_channel_id")
@@ -196,6 +207,10 @@ async def latest(ctx):
     """Displays the last reply and its author, date."""
     settings = load_config()
     guild_id = str(ctx.guild.id)
+
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
     
     if guild_id in settings and settings[guild_id]["topic_id"]:
         topic_id = settings[guild_id]["topic_id"]
@@ -231,6 +246,10 @@ async def thread(ctx):
     settings = load_config()
     guild_id = str(ctx.guild.id)
 
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+
     if guild_id in settings and settings[guild_id]["topic_id"]:
         topic_id = settings[guild_id]["topic_id"]
         replies = load_forum_data(topic_id) 
@@ -252,7 +271,14 @@ async def thread(ctx):
 
 @bot.command()
 async def admins(ctx):
+    guild_id = str(ctx.guild.id)
+
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+    
     player_data = load_player_data()
+    
     embed = discord.Embed(title="Online Admins", color=discord.Color.red())
     if not player_data or "players" not in player_data:
         await ctx.send("No player data available.")
@@ -274,6 +300,12 @@ async def admins(ctx):
 
 @bot.command()
 async def testers(ctx):
+    guild_id = str(ctx.guild.id)
+
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+    
     player_data = load_player_data()
     embed = discord.Embed(title="Online Testers", color=discord.Color.red())
     if not player_data or "players" not in player_data:
@@ -297,6 +329,12 @@ async def testers(ctx):
     
 @bot.command()
 async def online(ctx):
+    guild_id = str(ctx.guild.id)
+
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+    
     player_data = load_player_data()  # Load player data from JSON
     if not player_data or "players" not in player_data:
         await ctx.send("No player data available.")
@@ -328,8 +366,15 @@ async def online(ctx):
 
 @bot.command()
 async def check(ctx, name: str = None):  # Set default to None to allow checking for missing argument
+    guild_id = str(ctx.guild.id)
+
+    if not is_configured(guild_id):
+        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        return
+    
     player_data = load_player_data()
     embed = discord.Embed(title="Player Status Check", color=discord.Color.red())
+
 
     # Check if name was provided
     if name is None:
