@@ -158,13 +158,14 @@ async def commands(ctx):
 1. **!setup** - Sets or updates the bot configuration. Usage:
    - `!setup CHANNEL_ID` to set the notification channel only (enables UCP monitoring).
    - `!setup CHANNEL_ID TOPIC_ID` to set both the channel and topic (enables UCP and forum monitoring).
-2. **!online** - Displays a list of all logged-in players.
-3. **!admins** - Shows a list of currently online admins.
-4. **!testers** - Lists all logged-in testers.
-5. **!check FirstName_LastName** - Checks if the specified player is currently online.
-6. **!latest** - Displays the last reply on our forum thread and its author.
-7. **!thread** - Shows how many replies are left for the next page.
-8. **!show_settings** - Shows the current configuration of the bot.
+2. **!remove** - Deletes the current bot configuration for this server, disabling all functionalities.
+3. **!online** - Displays a list of all logged-in players.
+4. **!admins** - Shows a list of currently online admins.
+5. **!testers** - Lists all logged-in testers.
+6. **!check FirstName_LastName** - Checks if the specified player is currently online.
+7. **!latest** - Displays the last reply on our forum thread and its author.
+8. **!thread** - Shows how many replies are left for the next page.
+9. **!show_settings** - Shows the current configuration of the bot.
 """
 
     embed.description = helpMessage.strip()
