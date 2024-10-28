@@ -241,14 +241,17 @@ async def admins(ctx):
         await ctx.send("No player data available.")
         return
 
-    admin_names = [player["characterName"] for player in player_data["players"] if player.get("isAdmin", False)]
+    admin_names = []
+    for player in player_data["players"]:
+        if player.get("isAdmin", False):
+            character_name = player.get("characterName", "Unknown")
+            account_name = player.get("accountName", "Unkown")
+            admin_names.append(f"{character_name} **({account_name})**")
 
     if admin_names:
-        response = f"\n".join(admin_names)
-        embed.description = response
+        embed.description = "\n".join(admin_names)
     else:
-        response = "No admins are currently logged in."
-        embed.description = response
+        embed.description = "No admins are currently logged in."
 
     await ctx.send(embed=embed)
 
@@ -260,16 +263,18 @@ async def testers(ctx):
         await ctx.send("No player data available.")
         return
     
-    tester_names = [player["characterName"] for player in player_data["players"] if player.get("isTester", False)]
+    tester_names = []
+    for player in player_data["players"]:
+        if player.get("isTester", "False"):
+            character_name = player.get("characterName", "Unkown")
+            account_name = player.get("accountName", "Unkown")
+            tester_names.append(f"{character_name} **({account_name})**")
 
     if tester_names:
-        response = f"\n".join(tester_names)
-        embed.description = response
-
+        embed.description = "\n".join(tester_names)
     else:
-        response = f"No testers are currently logged in."
-        embed.description = response
-
+        embed.description = "No testers are currently logged in."
+        
     await ctx.send(embed=embed)
 
     
