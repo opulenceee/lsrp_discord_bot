@@ -140,8 +140,8 @@ async def commands(ctx):
 
     helpMessage = """
 1. **!setup** - Sets or updates the bot configuration. Usage:
-   - `!setup CHANNEL_ID` to set the notification channel only.
-   - `!setup CHANNEL_ID TOPIC_ID` to set both the channel and topic.
+   - `!setup CHANNEL_ID` to set the notification channel only (enables UCP monitoring).
+   - `!setup CHANNEL_ID TOPIC_ID` to set both the channel and topic (enables UCP and forum monitoring).
 2. **!online** - Displays a list of all logged-in players.
 3. **!admins** - Shows a list of currently online admins.
 4. **!testers** - Lists all logged-in testers.
@@ -154,7 +154,6 @@ async def commands(ctx):
     embed.description = helpMessage.strip()
 
     await ctx.send(embed=embed)
-
 
 
 @bot.command(name='show_settings')
