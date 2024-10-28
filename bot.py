@@ -42,7 +42,7 @@ def save_config(config):
         json.dump(config, config_file, indent=4)  # Use indent for readability
 
 @bot.command(name='setup')
-async def setup(ctx, channel_id: int, topic_id: str):
+async def setup(ctx, channel_id: int = None, topic_id: str = None):
     """Sets the channel and topic for notifications."""
     settings = load_config()  # Load existing settings
     guild_id = str(ctx.guild.id)
@@ -51,13 +51,25 @@ async def setup(ctx, channel_id: int, topic_id: str):
     if guild_id not in settings:
         settings[guild_id] = {}  # Initialize an empty dict for this guild if it doesn't exist
 
-    # Update or create settings for the guild
-    settings[guild_id]["notification_channel_id"] = channel_id
-    settings[guild_id]["topic_id"] = topic_id
-    
-    save_config(settings)  # Save the updated settings
+    #Update only the provided values
+    if channel_id is not None:
+        settings[guild_id]["notification_channel_id"] = channel_id
+    if topic_id is not None:
+        settings[guild_id]["topic_id"] = topic_id
 
-    await ctx.send(f"Notification channel set to <#{channel_id}> for topic ID `{topic_id}`.")
+    save_config(settings) #Save the updated settings
+
+    # Build confirmation message
+    msg_parts = []
+    if channel_id is not None:
+        msg_parts.append(f"Notification channel set to <#{channel_id}>.")
+    if topic_id is not None:
+        msg_parts.append(f"Topic ID set to `{topic_id}`.")
+    if not msg_parts:
+        await ctx.send("Please provide at least one value to update (channel ID or topic ID).")
+        return
+
+    await ctx.send(" ".join(msg_parts))
 
     global tasks_started
     if not tasks_started:
@@ -127,17 +139,19 @@ async def commands(ctx):
     embed = discord.Embed(title="Bot Functionality Guide", color=discord.Color.red())
 
     helpMessage = """
-1. **!setup** - Use this command to set the bot up (!setup CHANNEL_ID TOPIC_ID).
+1. **!setup** - Sets or updates the bot configuration. Usage:
+   - `!setup CHANNEL_ID` to set the notification channel only.
+   - `!setup CHANNEL_ID TOPIC_ID` to set both the channel and topic.
 2. **!online** - Displays a list of all logged-in players.
 3. **!admins** - Shows a list of currently online admins.
 4. **!testers** - Lists all logged-in testers.
 5. **!check FirstName_LastName** - Checks if the specified player is currently online.
-6. **!latest** - Displays the last reply on our forum thread and it's author..
-7. **!thread** - Displays how many replies are left for the next page."
+6. **!latest** - Displays the last reply on our forum thread and its author.
+7. **!thread** - Shows how many replies are left for the next page.
 8. **!show_settings** - Shows the current configuration of the bot.
 """
 
-    embed.description = helpMessage.strip()  # Use strip() to remove any extra leading/trailing whitespace
+    embed.description = helpMessage.strip()
 
     await ctx.send(embed=embed)
 
