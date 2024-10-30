@@ -395,6 +395,23 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
     embed.description = response  # Set the response in the embed description
     await ctx.send(embed=embed)  # Send the embed message
 
+@bot.command(name="last_online")
+async def last_online(ctx, first_name: str, last_name: str):
+    full_name = f"{first_name}_{last_name}"
+    player_data = load_player_data()
+
+    player = next((p for p in player_data["players"] if p["characterName"] == full_name), None)
+    if player:
+        last_updated = player_data["syncTime"]
+        embed = discord.Embed(title="Player Status", color=discord.Color.blue())
+        embed.add_field(name="Character Name", value=player['characterName'], inline=False)
+        embed.add_field(name="Player Status", value=f"Player was last seen online on **{last_updated}**.", inline=False)
+        embed.set_footer(text="Data provided by the player list API")
+
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"No player found with the character name **{full_name}**.")
+
 last_reply_ids = {}
 tasks_started = False
 
