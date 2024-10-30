@@ -173,6 +173,7 @@ async def commands(ctx):
 7. **!latest** - Displays the last reply on our forum thread and its author.
 8. **!thread** - Shows how many replies are left for the next page.
 9. **!show_settings** - Shows the current configuration of the bot.
+10.  **!last_online FirstName_LastName** - Displays the last online status of the specified player.
 """
 
     embed.description = helpMessage.strip()
@@ -396,21 +397,25 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
     await ctx.send(embed=embed)  # Send the embed message
 
 @bot.command(name="last_online")
-async def last_online(ctx, first_name: str, last_name: str):
-    full_name = f"{first_name}_{last_name}"
+async def last_online(ctx, full_name: str):
     player_data = load_player_data()
 
     player = next((p for p in player_data["players"] if p["characterName"] == full_name), None)
     if player:
         last_updated = player_data["syncTime"]
-        embed = discord.Embed(title="Player Status", color=discord.Color.blue())
+
+        # Convert the UTC timestamp to a more readable format
+        last_updated_dt = datetime.strptime(last_updated, "%Y-%m-%dT%H:%M:%S.%fZ")
+        readable_time = last_updated_dt.strftime("%Y-%m-%d %I:%M %p")  # Format to 'YYYY-MM-DD HH:MM AM/PM'
+
+        embed = discord.Embed(title="Player Status", color=discord.Color.red())
         embed.add_field(name="Character Name", value=player['characterName'], inline=False)
-        embed.add_field(name="Player Status", value=f"Player was last seen online on **{last_updated}**.", inline=False)
+        embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
         embed.set_footer(text="Data provided by the player list API")
 
         await ctx.send(embed=embed)
     else:
-        await ctx.send(f"No player found with the character name **{full_name}**.")
+        await ctx.send(f"The player **{full_name}** does not appear to be in the current player list.")
 
 last_reply_ids = {}
 tasks_started = False
