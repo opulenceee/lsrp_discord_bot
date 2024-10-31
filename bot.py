@@ -108,18 +108,31 @@ def load_forum_data(topic_id):
     return {}
 
 def load_player_data():
-    json_file_path = os.path.join(DATA_DIR, 'player_list.json')
-    if os.path.exists(json_file_path):
-        with open(json_file_path, "r") as file:
-            return json.load(file)
-    return {}
+    player_list_path = os.path.join(DATA_DIR, 'player_list.json')
+    player_data = {}
+
+    # Load player_list.json
+    if os.path.exists(player_list_path):
+        with open(player_list_path, "r") as file:
+            player_data = json.load(file)
+    else:
+        print("player_list.json does not exist.")
+
+    return player_data
 
 def load_last_seen():
-    try:
-        with open("data/last_seen.json", "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}  # Return an empty dictionary if the file doesn't exist
+    last_seen_path = os.path.join(DATA_DIR, 'last_seen.json')
+    last_seen_data = {}
+
+    # Load last_seen.json
+    if os.path.exists(last_seen_path):
+        with open(last_seen_path, "r") as file:
+            last_seen_data = json.load(file)
+    else:
+        print("last_seen.json does not exist.")
+
+    return last_seen_data
+
 
 def format_date(date_str):
     """Convert ISO 8601 date string to a more readable format."""
@@ -405,12 +418,13 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
 
 @bot.command(name="last_online")
 async def last_online(ctx, full_name: str):
-    last_seen_data = load_last_seen()
+    last_seen_data = load_last_seen()  # Load only last seen data
 
-    # Check if the player exists in last_seen.json
+    # Check if the player's last seen data exists
     last_seen_time = last_seen_data.get(full_name)
+
     if last_seen_time:
-        # Convert the UTC timestamp to a more readable format
+        # Convert the last seen time to a datetime object
         last_seen_dt = datetime.strptime(last_seen_time, "%Y-%m-%dT%H:%M:%S.%fZ")
         readable_time = last_seen_dt.strftime("%Y-%m-%d %I:%M %p")  # Format to 'YYYY-MM-DD HH:MM AM/PM'
 
@@ -418,7 +432,6 @@ async def last_online(ctx, full_name: str):
         embed = discord.Embed(title="Player Status", color=discord.Color.red())
         embed.add_field(name="Character Name", value=full_name, inline=False)
         embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
-        embed.set_footer(text="Data provided by the player list API")
 
         await ctx.send(embed=embed)
     else:

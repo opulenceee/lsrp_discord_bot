@@ -89,53 +89,51 @@ def fetch_and_save_json_data(driver):
         os.makedirs('data', exist_ok=True)
 
         # Save the parsed JSON data to a file
-        with open('data/player_list.json', 'w') as json_file:
+        player_list_file = 'data/player_list.json'
+        with open(player_list_file, 'w') as json_file:
             json.dump(json_data, json_file, indent=4)
-        print("Player list data saved to data/player_list.json")
+        print(f"Player list data saved to {player_list_file}")
+
+        # Load existing last_seen data if it exists
+        last_seen_file = 'data/last_seen.json'
+        if os.path.exists(last_seen_file):
+            with open(last_seen_file, 'r') as f:
+                last_seen_dict = json.load(f)
+        else:
+            last_seen_dict = {}  # Initialize an empty dictionary if the file doesn't exist
+
+        # Get the syncTime from the fetched JSON data
+        sync_time = json_data.get("syncTime")
+
+        # Update or add character names in last_seen_dict
+        for player in json_data.get("players", []):
+            character_name = player.get("characterName")
+            if character_name:
+                last_seen_dict[character_name] = sync_time  # Update or add the entry
+
+        # Save updated last_seen data back to the JSON file
+        with open(last_seen_file, 'w') as f:
+            json.dump(last_seen_dict, f, indent=4)
+        print(f"Last seen data saved to {last_seen_file}")
+
     except json.JSONDecodeError as e:
         print(f"Failed to decode JSON: {e}")
         return False  # Indicate failure in fetching/parsing JSON data
 
     return True  # Indicate success
 
-
 def refresh_page(driver):
     """Refresh both the API and forum pages."""
     print("Refreshing the pages...")
     driver.refresh()  # Refresh API page
 
-def update_last_seen(player_data_path="data/player_list.json", last_seen_path="data/last_seen.json"):
-    try:
-        # Load the latest player data
-        with open(player_data_path, "r") as f:
-            player_data = json.load(f)
-
-        # Load existing last_seen data if available
-        try:
-            with open(last_seen_path, "r") as f:
-                last_seen = json.load(f)
-        except FileNotFoundError:
-            last_seen = {}
-
-        # Update or add players' last seen time
-        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        for player in player_data["players"]:
-            player_name = player["characterName"]
-            last_seen[player_name] = current_time
-
-        # Write updated last seen data back to file
-        with open(last_seen_path, "w") as f:
-            json.dump(last_seen, f, indent=4)
-        print("Last seen data updated in last_seen.json.")
-
-    except Exception as e:
-        print(f"Error updating last_seen.json: {e}")
 
 def main():
     while True:
         driver = login_ucp()
         if driver:
             session_start_time = time.time()  # Track when the session started
+           
             try:
                 refresh_interval = 15  # Refresh interval in seconds
                 while True:
@@ -154,7 +152,6 @@ def main():
                     success = fetch_and_save_json_data(driver)
                     if success:
                         print("Data fetched and saved successfully.")
-                        update_last_seen()  # Update last_seen.json based on the new player_data.json
                     else:
                         print("403 Forbidden detected, re-logging in.")
                         driver.quit()
