@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv() # Load environment variables from .env file
 
@@ -103,6 +104,32 @@ def refresh_page(driver):
     print("Refreshing the pages...")
     driver.refresh()  # Refresh API page
 
+def update_last_seen(player_data_path="data/player_list.json", last_seen_path="data/last_seen.json"):
+    try:
+        # Load the latest player data
+        with open(player_data_path, "r") as f:
+            player_data = json.load(f)
+
+        # Load existing last_seen data if available
+        try:
+            with open(last_seen_path, "r") as f:
+                last_seen = json.load(f)
+        except FileNotFoundError:
+            last_seen = {}
+
+        # Update or add players' last seen time
+        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        for player in player_data["players"]:
+            player_name = player["characterName"]
+            last_seen[player_name] = current_time
+
+        # Write updated last seen data back to file
+        with open(last_seen_path, "w") as f:
+            json.dump(last_seen, f, indent=4)
+        print("Last seen data updated in last_seen.json.")
+
+    except Exception as e:
+        print(f"Error updating last_seen.json: {e}")
 
 def main():
     while True:
@@ -114,31 +141,30 @@ def main():
                 while True:
                     current_time = time.time()
 
-                    # Check if session needs to be refreshed based on SESSION_REFRESH_INTERVAL
                     if current_time - session_start_time >= SESSION_REFRESH_INTERVAL:
                         print("Session expired, re-logging in.")
                         driver.quit()
-                        driver = login_ucp()  # Force re-login
+                        driver = login_ucp()
                         if not driver:
                             print("Re-login failed after session expiry. Exiting.")
-                            break  # Exit loop if re-login fails
-                        session_start_time = current_time  # Reset session timer
+                            break
+                        session_start_time = current_time
 
-                    # Fetch data
+                    # Fetch data and update last_seen.json
                     success = fetch_and_save_json_data(driver)
                     if success:
                         print("Data fetched and saved successfully.")
+                        update_last_seen()  # Update last_seen.json based on the new player_data.json
                     else:
-                        # Force re-login on 403 Forbidden
                         print("403 Forbidden detected, re-logging in.")
                         driver.quit()
                         driver = login_ucp()
                         if not driver:
                             print("Re-login failed after 403 Forbidden. Exiting.")
                             break
-                        session_start_time = time.time()  # Reset session start time on re-login
+                        session_start_time = time.time()
 
-                    time.sleep(refresh_interval)  # Wait before the next fetch
+                    time.sleep(refresh_interval)
                     refresh_page(driver)
 
             except KeyboardInterrupt:

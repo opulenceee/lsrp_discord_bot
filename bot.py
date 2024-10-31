@@ -114,6 +114,13 @@ def load_player_data():
             return json.load(file)
     return {}
 
+def load_last_seen():
+    try:
+        with open("data/last_seen.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}  # Return an empty dictionary if the file doesn't exist
+
 def format_date(date_str):
     """Convert ISO 8601 date string to a more readable format."""
     # Parse the ISO date
@@ -398,24 +405,24 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
 
 @bot.command(name="last_online")
 async def last_online(ctx, full_name: str):
-    player_data = load_player_data()
+    last_seen_data = load_last_seen()
 
-    player = next((p for p in player_data["players"] if p["characterName"] == full_name), None)
-    if player:
-        last_updated = player_data["syncTime"]
-
+    # Check if the player exists in last_seen.json
+    last_seen_time = last_seen_data.get(full_name)
+    if last_seen_time:
         # Convert the UTC timestamp to a more readable format
-        last_updated_dt = datetime.strptime(last_updated, "%Y-%m-%dT%H:%M:%S.%fZ")
-        readable_time = last_updated_dt.strftime("%Y-%m-%d %I:%M %p")  # Format to 'YYYY-MM-DD HH:MM AM/PM'
+        last_seen_dt = datetime.strptime(last_seen_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+        readable_time = last_seen_dt.strftime("%Y-%m-%d %I:%M %p")  # Format to 'YYYY-MM-DD HH:MM AM/PM'
 
+        # Create an embed message for Discord
         embed = discord.Embed(title="Player Status", color=discord.Color.red())
-        embed.add_field(name="Character Name", value=player['characterName'], inline=False)
+        embed.add_field(name="Character Name", value=full_name, inline=False)
         embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
         embed.set_footer(text="Data provided by the player list API")
 
         await ctx.send(embed=embed)
     else:
-        await ctx.send(f"The player **{full_name}** does not appear to be in the current player list.")
+        await ctx.send(f"The player **{full_name}** does not appear to have a recorded last seen time.")
 
 last_reply_ids = {}
 tasks_started = False
