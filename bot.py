@@ -154,7 +154,7 @@ async def setup(ctx, channel_id: int = None, topic_id: str = None):
 @commands.has_permissions(administrator=True)
 async def remove(ctx):
     if not ctx.author.guild_permissions.administrator:
-        await ctx.send("You must be an administrator to use the setup command.")
+        await ctx.send("You must be an administrator to use the remove command.")
         return
     server_id = str(ctx.guild.id)
     server_settings = load_config()
