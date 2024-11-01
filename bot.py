@@ -107,13 +107,11 @@ def is_configured(server_id):
     server_settings = load_config()
     return server_id in server_settings
 
+tasks_started = False
 
 @bot.command(name='setup')
 @commands.has_permissions(administrator=True)
 async def setup(ctx, channel_id: int = None, topic_id: str = None):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("You must be an administrator to use the setup command.")
-        return
     """Sets the channel and topic for notifications."""
     settings = load_config()  # Load existing settings
     guild_id = str(ctx.guild.id)
@@ -122,13 +120,13 @@ async def setup(ctx, channel_id: int = None, topic_id: str = None):
     if guild_id not in settings:
         settings[guild_id] = {}  # Initialize an empty dict for this guild if it doesn't exist
 
-    #Update only the provided values
+    # Update only the provided values
     if channel_id is not None:
         settings[guild_id]["notification_channel_id"] = channel_id
     if topic_id is not None:
         settings[guild_id]["topic_id"] = topic_id
 
-    save_config(settings) #Save the updated settings
+    save_config(settings)  # Save the updated settings
 
     # Build confirmation message
     msg_parts = []
@@ -148,14 +146,18 @@ async def setup(ctx, channel_id: int = None, topic_id: str = None):
         bot.loop.create_task(monitor_replies())
         tasks_started = True
 
+# Handle missing permissions error for setup
+@setup.error
+async def setup_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("You must have administrator permissions to use this command.")
+    else:
+        await ctx.send(f"An unexpected error occurred: {str(error)}")
 
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def remove(ctx):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("You must be an administrator to use the remove command.")
-        return
     server_id = str(ctx.guild.id)
     server_settings = load_config()
 
@@ -165,6 +167,14 @@ async def remove(ctx):
         await ctx.send("Configuration removed for this server.")
     else:
         await ctx.send("No configuration found for this server.")
+
+@remove.error
+async def remove_error(ctx, error):
+    print(f"Error Type: {type(error)}")  # Log the error type
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("You must have administrator permissions to use this command.")
+    else:
+        await ctx.send(f"An unexpected error occurred: {str(error)}")
 
 
 
@@ -246,7 +256,7 @@ def clean_html(raw_html):
 
 
 @bot.command()
-async def commands(ctx):
+async def info(ctx):
     embed = discord.Embed(title="Bot Functionality Guide", color=discord.Color.red())
 
     helpMessage = """
@@ -505,7 +515,6 @@ async def last_online(ctx, full_name: str):
         await ctx.send(f"The player **{full_name}** does not appear to have a recorded last seen time.")
 
 last_reply_ids = {}
-tasks_started = False
 
 async def monitor_replies():
     settings = load_config()
