@@ -23,6 +23,66 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Load blocked guilds from a file
+def load_blocked_guilds():
+    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')  # Define path here
+    try:
+        with open(blocked_guilds_file_path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):  # Handle JSON decode errors
+        return []
+
+# Initialize blocked guilds globally
+blocked_guilds = load_blocked_guilds()
+
+# Save blocked guilds to a file
+def save_blocked_guilds():
+    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')  # Define path here
+    with open(blocked_guilds_file_path, 'w') as f:
+        json.dump(blocked_guilds, f)
+
+@bot.command()
+@commands.is_owner()  # Restricts the command to the bot owner
+async def block_guild(ctx, guild_id: int):
+    if guild_id not in blocked_guilds:
+        blocked_guilds.append(guild_id)
+        save_blocked_guilds()
+        await ctx.send(f"Guild {guild_id} has been blocked.")
+    else:
+        await ctx.send("This guild is already blocked.")
+
+@bot.command()
+@commands.is_owner()  # Restricts the command to the bot owner
+async def unblock_guild(ctx, guild_id: int):
+    # Ensure guild_id is an integer
+    guild_id = int(guild_id)  # Make sure we're working with an int
+
+    # Check if the command is run in a blocked guild but still allow execution
+    if ctx.guild and ctx.guild.id in blocked_guilds:
+        await ctx.send("You are unblocking this server despite it being blocked.")
+
+    if guild_id in blocked_guilds:
+        blocked_guilds.remove(guild_id)
+        save_blocked_guilds()
+        await ctx.send(f"Guild {guild_id} has been unblocked.")
+    else:
+        await ctx.send(f"This guild {guild_id} is not blocked.")
+
+    # Debugging step
+    await ctx.send(f"Blocked guilds after unblocking: {blocked_guilds}")
+
+# Global check to prevent commands in blocked guilds, except unblock_guild
+@bot.check
+async def globally_blocked(ctx):
+    # Allow unblock_guild to run even in blocked guilds
+    if ctx.command.name == "unblock_guild":
+        return True  # Bypass the block for this command
+
+    if ctx.guild and ctx.guild.id in blocked_guilds:
+        await ctx.send("This server is blocked from using the bot.")
+        return False
+    return True
+
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -49,7 +109,11 @@ def is_configured(server_id):
 
 
 @bot.command(name='setup')
+@commands.has_permissions(administrator=True)
 async def setup(ctx, channel_id: int = None, topic_id: str = None):
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send("You must be an administrator to use the setup command.")
+        return
     """Sets the channel and topic for notifications."""
     settings = load_config()  # Load existing settings
     guild_id = str(ctx.guild.id)
@@ -87,7 +151,11 @@ async def setup(ctx, channel_id: int = None, topic_id: str = None):
 
 
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def remove(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send("You must be an administrator to use the setup command.")
+        return
     server_id = str(ctx.guild.id)
     server_settings = load_config()
 
@@ -182,10 +250,10 @@ async def commands(ctx):
     embed = discord.Embed(title="Bot Functionality Guide", color=discord.Color.red())
 
     helpMessage = """
-1. **!setup** - Sets or updates the bot configuration. Usage:
-   - `!setup CHANNEL_ID` to set the notification channel only (enables UCP monitoring).
-   - `!setup CHANNEL_ID TOPIC_ID` to set both the channel and topic (enables UCP and forum monitoring).
-2. **!remove** - Deletes the current bot configuration for this server, disabling all functionalities.
+1. **!setup** - Admin command to set or update the bot configuration. Usage:
+   - `!setup CHANNEL_ID` - Set the notification channel only (enables UCP monitoring).
+   - `!setup CHANNEL_ID TOPIC_ID` - Set both the channel and topic (enables UCP and forum monitoring).
+2. **!remove** - Admin command to delete the current bot configuration for this server, disabling all functionalities.
 3. **!online** - Displays a list of all logged-in players.
 4. **!admins** - Shows a list of currently online admins.
 5. **!testers** - Lists all logged-in testers.
@@ -193,11 +261,10 @@ async def commands(ctx):
 7. **!latest** - Displays the last reply on our forum thread and its author.
 8. **!thread** - Shows how many replies are left for the next page.
 9. **!show_settings** - Shows the current configuration of the bot.
-10.  **!last_online FirstName_LastName** - Displays the last online status of the specified player.
+10. **!last_online FirstName_LastName** - Displays the last online status of the specified player.
 """
 
-    embed.description = helpMessage.strip()
-
+    embed.description = helpMessage
     await ctx.send(embed=embed)
 
 
