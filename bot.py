@@ -559,7 +559,7 @@ async def send_notification(new_reply, channel_id):
     if not channel:
         print(f"Notification channel {channel_id} not found.")
         return
-
+    
     content, media_message = clean_html(new_reply.get("content", "No content available."))
     date_str = format_date(new_reply.get("date", "Unknown date"))
 
@@ -575,6 +575,7 @@ async def send_notification(new_reply, channel_id):
     # Extract the author information
     author = new_reply.get("author", {})
     author_name = author.get("formattedName", "Unknown Author")[:256]  # Truncate if necessary
+    author_name, _ = clean_html(author_name) # Cleaning any html tags.
     link = new_reply.get("url", "No link available")[:256]
 
     # Add fields to the embed
