@@ -22,6 +22,7 @@ RESTART_DELAY = 10  # Time in seconds before retrying after max login retries
 
 def login_ucp():
     retries = 0  # Track login attempts
+    driver = None  # Initialize driver variable outside the loop to avoid UnboundLocalError
     while retries < MAX_LOGIN_RETRIES:
         try:
             print(f"Attempt {retries + 1} of {MAX_LOGIN_RETRIES} to log in.")
@@ -67,7 +68,8 @@ def login_ucp():
         except Exception as e:
             print(f"Login attempt {retries + 1} failed: {e}")
             retries += 1
-            driver.quit()  # Close driver on failure
+            if driver:
+                driver.quit()  # Close driver on failure, only if it was initialized
 
     print(f"Max retries reached ({MAX_LOGIN_RETRIES}). Waiting {RESTART_DELAY} seconds before restarting...")
     time.sleep(RESTART_DELAY)

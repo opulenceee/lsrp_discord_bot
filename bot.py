@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 from datetime import datetime
 from bs4 import BeautifulSoup
 from forum_monitor import fetch_total_pages, fetch_forum_replies, save_replies_to_file
+from discord.ui import Button, View
+from discord import app_commands
+
 
 
 load_dotenv()  # Load environment variables from .env file
@@ -23,65 +26,96 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Load blocked guilds from a file
+
+@bot.tree.command(name="creator", description="Learn more about who created this bot.")
+async def creator(interaction: discord.Interaction):
+    # Create a button that links to your website
+    button = Button(label="Visit Official Website", url="https://opulenceee.wtf")
+    
+    # Create a view to hold the button
+    view = View()
+    view.add_item(button)
+
+    # Send a message with the button and creator info
+    await interaction.response.send_message(
+        content="This bot was created by **opulenceee.**. You can find more information about me at my official website.",
+        view=view
+    )
+
+# Loading blocked guilds from file
 def load_blocked_guilds():
-    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')  # Define path here
+    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')
     try:
         with open(blocked_guilds_file_path, 'r') as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):  # Handle JSON decode errors
+    except (FileNotFoundError, json.JSONDecodeError):  # Handle file errors
         return []
 
 # Initialize blocked guilds globally
 blocked_guilds = load_blocked_guilds()
 
+# Debugging: print blocked guilds after loading
+print(f"Blocked Guilds: {blocked_guilds}")
+
 # Save blocked guilds to a file
 def save_blocked_guilds():
-    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')  # Define path here
+    blocked_guilds_file_path = os.path.join(DATA_DIR, 'blocked_guilds.json')
     with open(blocked_guilds_file_path, 'w') as f:
         json.dump(blocked_guilds, f)
 
-@bot.command()
-@commands.is_owner()  # Restricts the command to the bot owner
-async def block_guild(ctx, guild_id: int):
+# Debugging: check if the list updates after blocking/unblocking
+print(f"Blocked Guilds after change: {blocked_guilds}")
+
+
+# Slash command to block a guild
+@bot.tree.command(name="block_guild", description="Block a guild by its ID.")
+@commands.is_owner()  # Restricts this command to the bot owner
+async def block_guild(interaction: discord.Interaction, guild_id: str):
+    try:
+        guild_id = int(guild_id)  # Ensure that guild_id is an integer
+    except ValueError:
+        await interaction.response.send_message("Invalid guild ID.")
+        return
+    
     if guild_id not in blocked_guilds:
         blocked_guilds.append(guild_id)
         save_blocked_guilds()
-        await ctx.send(f"Guild {guild_id} has been blocked.")
+        await interaction.response.send_message(f"Guild {guild_id} has been blocked.")
     else:
-        await ctx.send("This guild is already blocked.")
+        await interaction.response.send_message("This guild is already blocked.")
 
-@bot.command()
-@commands.is_owner()  # Restricts the command to the bot owner
-async def unblock_guild(ctx, guild_id: int):
+@bot.tree.command(name="unblock_guild", description="Unblock a guild by its ID.")
+@commands.is_owner()  # Restrict this command to the bot owner
+async def unblock_guild(interaction: discord.Interaction, guild_id: str):
     # Ensure guild_id is an integer
     guild_id = int(guild_id)  # Make sure we're working with an int
 
     # Check if the command is run in a blocked guild but still allow execution
-    if ctx.guild and ctx.guild.id in blocked_guilds:
-        await ctx.send("You are unblocking this server despite it being blocked.")
+    if interaction.guild and interaction.guild.id in blocked_guilds:
+        await interaction.response.send_message("You are unblocking this server despite it being blocked.")
 
+    # Proceed with unblocking
     if guild_id in blocked_guilds:
         blocked_guilds.remove(guild_id)
         save_blocked_guilds()
-        await ctx.send(f"Guild {guild_id} has been unblocked.")
+        
+        # Use followup.send instead of response.send_message to avoid "InteractionResponded"
+        await interaction.followup.send(f"Guild {guild_id} has been unblocked.")
     else:
-        await ctx.send(f"This guild {guild_id} is not blocked.")
+        await interaction.response.send_message(f"This guild {guild_id} is not blocked.")
 
-    # Debugging step
-    await ctx.send(f"Blocked guilds after unblocking: {blocked_guilds}")
+    # Debugging step to confirm guilds after unblocking
+    await interaction.followup.send(f"Blocked guilds after unblocking: {blocked_guilds}")
 
 # Global check to prevent commands in blocked guilds, except unblock_guild
-@bot.check
-async def globally_blocked(ctx):
-    # Allow unblock_guild to run even in blocked guilds
-    if ctx.command.name == "unblock_guild":
-        return True  # Bypass the block for this command
-
-    if ctx.guild and ctx.guild.id in blocked_guilds:
-        await ctx.send("This server is blocked from using the bot.")
-        return False
-    return True
+async def check_guild(interaction: discord.Interaction) -> bool:
+    if interaction.guild and interaction.guild.id in blocked_guilds:
+        await interaction.response.send_message(
+            f"Commands are disabled for **{interaction.guild.name}**. "
+            "Please contact the bot owner if you think this is an error."
+        ) 
+        return False  # Block this guild
+    return True  # Allow the command
 
 
 def load_config():
@@ -109,73 +143,60 @@ def is_configured(server_id):
 
 tasks_started = False
 
-@bot.command(name='setup')
-@commands.has_permissions(administrator=True)
-async def setup(ctx, channel_id: int = None, topic_id: str = None):
-    """Sets the channel and topic for notifications."""
-    settings = load_config()  # Load existing settings
-    guild_id = str(ctx.guild.id)
-
-    # Ensure there's an entry for this guild
-    if guild_id not in settings:
-        settings[guild_id] = {}  # Initialize an empty dict for this guild if it doesn't exist
-
-    # Update only the provided values
-    if channel_id is not None:
-        settings[guild_id]["notification_channel_id"] = channel_id
-    if topic_id is not None:
-        settings[guild_id]["topic_id"] = topic_id
-
-    save_config(settings)  # Save the updated settings
-
-    # Build confirmation message
-    msg_parts = []
-    if channel_id is not None:
-        msg_parts.append(f"Notification channel set to <#{channel_id}>.")
-    if topic_id is not None:
-        msg_parts.append(f"Topic ID set to `{topic_id}`.")
-    if not msg_parts:
-        await ctx.send("Please provide at least one value to update (channel ID or topic ID).")
+@bot.tree.command(name="setup", description="Configure bot settings for this server")
+@app_commands.check(check_guild)
+async def setup(interaction: discord.Interaction, channel_id: str, topic_id: str = None):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("You must have administrator permissions to use this command.", ephemeral=True)
         return
 
-    await ctx.send(" ".join(msg_parts))
+    settings = load_config()
+    guild_id = str(interaction.guild_id)
 
-    global tasks_started
-    if not tasks_started:
-        bot.loop.create_task(update_player_list_and_forum_comments())
-        bot.loop.create_task(monitor_replies())
-        tasks_started = True
+    if guild_id not in settings:
+        settings[guild_id] = {}
 
-# Handle missing permissions error for setup
-@setup.error
-async def setup_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("You must have administrator permissions to use this command.")
-    else:
-        await ctx.send(f"An unexpected error occurred: {str(error)}")
+    try:
+        channel_id = int(channel_id)
+        settings[guild_id]["notification_channel_id"] = channel_id
+        if topic_id:
+            settings[guild_id]["topic_id"] = topic_id
+
+        save_config(settings)
+
+        msg_parts = []
+        msg_parts.append(f"Notification channel set to <#{channel_id}>.")
+        if topic_id:
+            msg_parts.append(f"Topic ID set to `{topic_id}`.")
+
+        await interaction.response.send_message(" ".join(msg_parts))
+
+        global tasks_started
+        if not tasks_started:
+            bot.loop.create_task(update_player_list_and_forum_comments())
+            bot.loop.create_task(monitor_replies())
+            tasks_started = True
+
+    except ValueError:
+        await interaction.response.send_message("Invalid channel ID format. Please provide a valid number.", ephemeral=True)
 
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def remove(ctx):
-    server_id = str(ctx.guild.id)
+@bot.tree.command(name="remove", description="Remove bot configuration for this server")
+@app_commands.check(check_guild)
+async def remove(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("You must have administrator permissions to use this command.", ephemeral=True)
+        return
+
+    server_id = str(interaction.guild_id)
     server_settings = load_config()
 
     if server_id in server_settings:
-        del server_settings[server_id]  # Remove the server's settings
-        save_config(server_settings)  # Save updated settings
-        await ctx.send("Configuration removed for this server.")
+        del server_settings[server_id]
+        save_config(server_settings)
+        await interaction.response.send_message("Configuration removed for this server.")
     else:
-        await ctx.send("No configuration found for this server.")
-
-@remove.error
-async def remove_error(ctx, error):
-    print(f"Error Type: {type(error)}")  # Log the error type
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("You must have administrator permissions to use this command.")
-    else:
-        await ctx.send(f"An unexpected error occurred: {str(error)}")
-
+        await interaction.response.send_message("No configuration found for this server.")
 
 
 def load_forum_data(topic_id):
@@ -255,37 +276,38 @@ def clean_html(raw_html):
 
 
 
-@bot.command()
-async def info(ctx):
+@bot.tree.command(name="info", description="Displays the bot functionality guide.")
+@app_commands.check(check_guild)
+async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="Bot Functionality Guide", color=discord.Color.red())
 
     helpMessage = """
-1. **!setup** - Admin command to set or update the bot configuration. Usage:
-   - `!setup CHANNEL_ID` - Set the notification channel only (enables UCP monitoring).
-   - `!setup CHANNEL_ID TOPIC_ID` - Set both the channel and topic (enables UCP and forum monitoring).
-2. **!remove** - Admin command to delete the current bot configuration for this server, disabling all functionalities.
-3. **!online** - Displays a list of all logged-in players.
-4. **!admins** - Shows a list of currently online admins.
-5. **!testers** - Lists all logged-in testers.
-6. **!check FirstName_LastName** - Checks if the specified player is currently online.
-7. **!latest** - Displays the last reply on our forum thread and its author.
-8. **!thread** - Shows how many replies are left for the next page.
-9. **!show_settings** - Shows the current configuration of the bot.
-10. **!last_online FirstName_LastName** - Displays the last online status of the specified player.
+1. **/setup** - Admin command to set or update the bot configuration. Usage:
+   - `/setup CHANNEL_ID` - Set the notification channel only (enables UCP monitoring).
+   - `/setup CHANNEL_ID TOPIC_ID` - Set both the channel and topic (enables UCP and forum monitoring).
+2. **/remove** - Admin command to delete the current bot configuration for this server, disabling all functionalities.
+3. **/online** - Displays a list of all logged-in players.
+4. **/admins** - Shows a list of currently online admins.
+5. **/testers** - Lists all logged-in testers.
+6. **/check FirstName_LastName** - Checks if the specified player is currently online.
+7. **/latest** - Displays the last reply on our forum thread and its author.
+8. **/thread** - Shows how many replies are left for the next page.
+9. **/show_settings** - Shows the current configuration of the bot.
+10. **/last_online FirstName_LastName** - Displays the last online status of the specified player.
 """
 
     embed.description = helpMessage
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
-
-@bot.command(name='show_settings')
-async def show_settings(ctx):
-    """Sets the channel and topic for notifications based on existing settings."""
+@bot.tree.command(name="show_settings", description="Displays the current configuration of the bot.")
+@app_commands.check(check_guild)
+async def show_settings(interaction: discord.Interaction):
+    """Displays the channel and topic for notifications based on existing settings."""
+    guild_id = str(interaction.guild.id)
     settings = load_config()  # Load existing settings
-    guild_id = str(ctx.guild.id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
         return
 
     # Check if settings exist for the guild
@@ -294,20 +316,21 @@ async def show_settings(ctx):
         topic_id = settings[guild_id].get("topic_id")
 
         if notification_channel_id and topic_id:
-            await ctx.send(f"Notification channel is set to <#{notification_channel_id}> for topic ID `{topic_id}`.")
+            await interaction.response.send_message(f"Notification channel is set to <#{notification_channel_id}> for topic ID `{topic_id}`.")
         else:
-            await ctx.send("Notification channel ID or topic ID is not set.")
+            await interaction.response.send_message("Notification channel ID or topic ID is not set.")
     else:
-        await ctx.send("No settings found for this server. Please set them using the appropriate command.")    
+        await interaction.response.send_message("No settings found for this server. Please set them using the appropriate command.")
 
-@bot.command(name='latest')
-async def latest(ctx):
+@bot.tree.command(name="latest", description="Displays the last reply and its author, date.")
+@app_commands.check(check_guild)
+async def latest(interaction: discord.Interaction):
     """Displays the last reply and its author, date."""
     settings = load_config()
-    guild_id = str(ctx.guild.id)
+    guild_id = str(interaction.guild.id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
         return
     
     if guild_id in settings and settings[guild_id]["topic_id"]:
@@ -333,156 +356,152 @@ async def latest(ctx):
             embed.add_field(name="Link", value=url, inline=False)
             embed.add_field(name="Date", value=date, inline=True)
 
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
         else:
-            await ctx.send("No replies found.")
+            await interaction.response.send_message("No replies found.")
     else:
-        await ctx.send("Please set up a topic ID first using `!setup channel_id topic_id`.")
+        await interaction.response.send_message("Please set up a topic ID first using `/setup channel_id topic_id`.")
 
-@bot.command(name='thread')
-async def thread(ctx):
+@bot.tree.command(name="thread", description="Displays the current number of replies and how many are left for the next page.")
+@app_commands.check(check_guild)
+async def thread(interaction: discord.Interaction):
+    """Displays the current number of replies and how many are left for the next page."""
     settings = load_config()
-    guild_id = str(ctx.guild.id)
+    guild_id = str(interaction.guild.id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
         return
 
     if guild_id in settings and settings[guild_id]["topic_id"]:
         topic_id = settings[guild_id]["topic_id"]
-        replies = load_forum_data(topic_id) 
+        replies = load_forum_data(topic_id)  # Load replies for the specific topic_id
 
         if replies:
             current_replies = len(replies)
-            replies_left = 15 - current_replies
+            replies_left = 15 - current_replies  # Assuming 15 replies per page
 
             embed = discord.Embed(title="Replies Status", color=discord.Color.red())
             embed.add_field(name="Current Replies", value=current_replies, inline=False)
             embed.add_field(name="Replies Left for New Page", value=replies_left, inline=False)
 
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
         else:
-            await ctx.send("No replies found")
+            await interaction.response.send_message("No replies found.")
     else:
-        await ctx.send("Please set up a topic ID first using `!setup channel_id topic_id`.")
+        await interaction.response.send_message("Please set up a topic ID first using `/setup channel_id topic_id`.")
 
 
-@bot.command()
-async def admins(ctx):
-    guild_id = str(ctx.guild.id)
+@bot.tree.command(name="admins", description="Show online administrators")
+@app_commands.check(check_guild)
+async def admins(interaction: discord.Interaction):
+    guild_id = str(interaction.guild_id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
         return
-    
+
     player_data = load_player_data()
-    
     embed = discord.Embed(title="Online Admins", color=discord.Color.red())
+    
     if not player_data or "players" not in player_data:
-        await ctx.send("No player data available.")
+        await interaction.response.send_message("No player data available.")
         return
 
     admin_names = []
     for player in player_data["players"]:
         if player.get("isAdmin", False):
             character_name = player.get("characterName", "Unknown")
-            account_name = player.get("accountName", "Unkown")
+            account_name = player.get("accountName", "Unknown")
             admin_names.append(f"{character_name} **({account_name})**")
 
-    if admin_names:
-        embed.description = "\n".join(admin_names)
-    else:
-        embed.description = "No admins are currently logged in."
+    embed.description = "\n".join(admin_names) if admin_names else "No admins are currently logged in."
+    await interaction.response.send_message(embed=embed)
 
-    await ctx.send(embed=embed)
 
-@bot.command()
-async def testers(ctx):
-    guild_id = str(ctx.guild.id)
+@bot.tree.command(name="testers", description="Show online testers")
+@app_commands.check(check_guild)
+async def testers(interaction: discord.Interaction):
+    guild_id = str(interaction.guild_id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
         return
-    
+
     player_data = load_player_data()
     embed = discord.Embed(title="Online Testers", color=discord.Color.red())
+
     if not player_data or "players" not in player_data:
-        await ctx.send("No player data available.")
+        await interaction.response.send_message("No player data available.")
         return
-    
+
     tester_names = []
     for player in player_data["players"]:
-        if player.get("isTester", "False"):
-            character_name = player.get("characterName", "Unkown")
-            account_name = player.get("accountName", "Unkown")
+        if player.get("isTester", False):
+            character_name = player.get("characterName", "Unknown")
+            account_name = player.get("accountName", "Unknown")
             tester_names.append(f"{character_name} **({account_name})**")
 
-    if tester_names:
-        embed.description = "\n".join(tester_names)
-    else:
-        embed.description = "No testers are currently logged in."
+    embed.description = "\n".join(tester_names) if tester_names else "No testers are currently logged in."
+    await interaction.response.send_message(embed=embed)
 
-    await ctx.send(embed=embed)
 
     
-@bot.command()
-async def online(ctx):
-    guild_id = str(ctx.guild.id)
+@bot.tree.command(name="online", description="Display all online players")
+@app_commands.check(check_guild)
+async def online(interaction: discord.Interaction):
+    guild_id = str(interaction.guild_id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
-        return
-    
-    player_data = load_player_data()  # Load player data from JSON
-    if not player_data or "players" not in player_data:
-        await ctx.send("No player data available.")
+        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
         return
 
-    # Extract the names of the players
+    player_data = load_player_data()
+    if not player_data or "players" not in player_data:
+        await interaction.response.send_message("No player data available.")
+        return
+
     player_names = [player["characterName"] for player in player_data["players"]]
     player_count = len(player_names)
-
-    # Prepare the response
     response = "\n".join(player_names)
 
     embed = discord.Embed(title=f"Online Players ({player_count}):", color=discord.Color.red())
-
+    
+    # Handle long responses
     if len(response) > 4096:
-        embed.description = response[:4096]  
-        await ctx.send(embed=embed)
-
-        # Send additional chunks without the title
-        for i in range(4096, len(response), 4096):
-            chunk = response[i:i + 4096]
+        chunks = [response[i:i + 4096] for i in range(0, len(response), 4096)]
+        embed.description = chunks[0]
+        await interaction.response.send_message(embed=embed)
+        
+        for chunk in chunks[1:]:
             embed_chunk = discord.Embed(color=discord.Color.red(), description=chunk)
-            await ctx.send(embed=embed_chunk)
+            await interaction.followup.send(embed=embed_chunk)
     else:
-    # Send the response to the Discord channel
         embed.description = response
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-
-@bot.command()
-async def check(ctx, name: str = None):  # Set default to None to allow checking for missing argument
-    guild_id = str(ctx.guild.id)
+@bot.tree.command(name="check", description="Check if a player is logged in.")
+@app_commands.check(check_guild)
+@app_commands.describe(name="The player's full name in the format Firstname_Lastname")
+async def check(interaction: discord.Interaction, name: str = None):
+    guild_id = str(interaction.guild.id)
 
     if not is_configured(guild_id):
-        await ctx.send("This bot is not configured for this server. Please run `!setup` to configure it.")
+        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
         return
     
     player_data = load_player_data()
     embed = discord.Embed(title="Player Status Check", color=discord.Color.red())
 
-
     # Check if name was provided
     if name is None:
-        await ctx.send("Please provide a name in the format Firstname_Lastname.")
+        await interaction.response.send_message("Please provide a name in the format Firstname_Lastname.")
         return
     
     characters = [player["characterName"] for player in player_data.get("players", [])]
 
     if "_" not in name:  # Check if name contains '_'
-        await ctx.send("Wrong format. Use Firstname_Lastname if you want the bot to work.")
+        await interaction.response.send_message("Wrong format. Use Firstname_Lastname if you want the bot to work.")
         return
     
     if name in characters:
@@ -491,10 +510,12 @@ async def check(ctx, name: str = None):  # Set default to None to allow checking
         response = f"{name} is not logged in."
 
     embed.description = response  # Set the response in the embed description
-    await ctx.send(embed=embed)  # Send the embed message
+    await interaction.response.send_message(embed=embed)  # Send the embed message
 
-@bot.command(name="last_online")
-async def last_online(ctx, full_name: str):
+@bot.tree.command(name="last_online", description="Check the last seen time of a player.")
+@app_commands.check(check_guild)
+@app_commands.describe(full_name="The full name of the player (Firstname_Lastname).")
+async def last_online(interaction: discord.Interaction, full_name: str):
     last_seen_data = load_last_seen()  # Load only last seen data
 
     # Check if the player's last seen data exists
@@ -510,9 +531,9 @@ async def last_online(ctx, full_name: str):
         embed.add_field(name="Character Name", value=full_name, inline=False)
         embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
 
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
     else:
-        await ctx.send(f"The player **{full_name}** does not appear to have a recorded last seen time.")
+        await interaction.response.send_message(f"The player **{full_name}** does not appear to have a recorded last seen time.")
 
 last_reply_ids = {}
 
@@ -607,6 +628,7 @@ async def update_player_list_and_forum_comments():
 @bot.event
 async def on_ready():
     global tasks_started
+    await bot.tree.sync()
     print(f'Logged in as {bot.user}')
 
     # Check if config exists on startup
