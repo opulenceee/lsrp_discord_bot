@@ -624,6 +624,57 @@ async def update_player_list_and_forum_comments():
         await asyncio.sleep(15)  # Continue to wait 30 seconds
         # await check_for_serbians_online()  # Just check for online players, no subprocess needed
 
+they_gotta_go_names = []
+THEY_GOTTA_GO_CHANNEL = ''
+THEY_GOTTA_GO_GUILD_ID = ''
+last_online_status = {}
+
+async def they_gotta_go():
+    print("they_gotta_go has been started")
+    global last_online_status
+
+    while True:
+        if not last_online_status:
+            last_online_status.update({about_to_die.replace(" ", "_"): False for about_to_die in they_gotta_go_names})
+
+        player_data = load_player_data()
+        online_players = [player["characterName"] for player in player_data.get("players", [])]
+
+        if THEY_GOTTA_GO_CHANNEL:
+            try:
+                channel = bot.get_channel(int(THEY_GOTTA_GO_CHANNEL))
+            except ValueError:
+                # Handle the case where the channel ID is invalid
+                print(f"Invalid channel ID: {THEY_GOTTA_GO_CHANNEL}")
+                await asyncio.sleep(30)  # Wait before retrying
+                continue
+        else:
+            print("THEY_GOTTA_GO_CHANNEL is empty!")
+            await asyncio.sleep(30)  # Wait before retrying
+            continue
+
+        if channel is None:
+            print(f"Failed to retrieve channel with ID {THEY_GOTTA_GO_CHANNEL}")
+            await asyncio.sleep(30)  # Wait before retrying
+            continue
+
+        if channel.guild.id != int(THEY_GOTTA_GO_GUILD_ID):
+            print(f"Channel does not belong to the specified guild ID {THEY_GOTTA_GO_GUILD_ID}")
+            await asyncio.sleep(30)  # Wait before retrying
+            continue
+
+        for about_to_die in they_gotta_go_names:
+            about_to_die_formatted = about_to_die.replace(" ", "_")
+            print(f"Checking player: {about_to_die_formatted}")  # debugging
+
+            if about_to_die_formatted in online_players and not last_online_status[about_to_die_formatted]:
+                await channel.send(f"@everyone {about_to_die} has just logged in!")
+                last_online_status[about_to_die_formatted] = True  # player logged in
+
+            elif about_to_die_formatted not in online_players and last_online_status[about_to_die_formatted]:
+                last_online_status[about_to_die_formatted] = False  # player logged out
+
+        await asyncio.sleep(30)  # Run every 30 seconds
 
 @bot.event
 async def on_ready():
