@@ -676,6 +676,67 @@ async def they_gotta_go():
 
         await asyncio.sleep(30)  # Run every 30 seconds
 
+async def send_support_message():
+    """Send support message every 4 hours to all configured channels."""
+    while True:
+        settings = load_config()
+        if settings:
+            embed = discord.Embed(
+                title="❤️ Support LSRP Bot Development!",
+                description=(
+                    "**Hey everyone!** Thanks for using the LSRP Bot!\n\n"
+                    "🤖 **What this bot offers:**\n"
+                    "• Real-time player tracking\n"
+                    "• Forum thread monitoring\n"
+                    "• Admin & tester status checks\n"
+                    "• Last seen player tracking\n"
+                    "And much more!\n\n"
+                    "🌟 **If you're finding this bot useful**, consider supporting its development! "
+                    "Every coffee helps keep the servers running and features coming!"
+                ),
+                color=discord.Color.red()
+            )
+            
+            # Add footer with bot stats
+            embed.set_footer(text=f"Currently serving {len(settings)} communities!")
+            
+            # Add timestamp to show when the message was sent
+            embed.timestamp = datetime.now()
+
+            # Create a view with multiple buttons
+            view = View()
+            
+            # Support button
+            support_button = Button(
+                label="☕ Buy Me a Coffee", 
+                url="https://buymeacoffee.com/opulenceee",
+                style=discord.ButtonStyle.link
+            )
+            view.add_item(support_button)
+            
+            # Add website button if you have one
+            website_button = Button(
+                label="🌐 Visit Website", 
+                url="https://opulenceee.wtf",
+                style=discord.ButtonStyle.link
+            )
+            view.add_item(website_button)
+
+            # Send to all configured channels
+            for guild_id, config in settings.items():
+                channel_id = config.get("notification_channel_id")
+                if channel_id:
+                    try:
+                        channel = bot.get_channel(int(channel_id))
+                        if channel:
+                            await channel.send(embed=embed, view=view)
+                    except Exception as e:
+                        print(f"Failed to send support message to channel {channel_id}: {e}")
+
+        # Wait for 4 hours
+        await asyncio.sleep(28800)  # 4 hours in seconds
+
+
 @bot.event
 async def on_ready():
     global tasks_started
@@ -687,6 +748,8 @@ async def on_ready():
     if config and not tasks_started:
         bot.loop.create_task(update_player_list_and_forum_comments())
         bot.loop.create_task(monitor_replies())
+        bot.loop.create_task(send_support_message())
+        # bot.loop.create_task(they_gotta_go())  # Add this line
         tasks_started = True
 
 # Run the bot

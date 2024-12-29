@@ -77,7 +77,7 @@ def fetch_total_pages(topic_id, forums):
     params = {
         "forums": forums,
         "perPage": PER_PAGE,
-        "page": 1  # Only need to request the first page to get the total pages
+        "page": 1
     }
 
     headers = {
@@ -86,11 +86,24 @@ def fetch_total_pages(topic_id, forums):
     }
 
     try:
+        print(f"Making request to URL: {url}")
+        print(f"With params: {params}")
+        print(f"Headers (partially redacted): {{'Authorization': 'Bearer ***', 'Content-Type': headers['Content-Type']}}")
+        
         response = requests.get(url, headers=headers, params=params)
+        print(f"Response status code: {response.status_code}")
+        print(f"Response headers: {response.headers}")
+        print(f"Response content: {response.text[:500]}")  # Print first 500 chars of response
+        
         response.raise_for_status()
-        return response.json().get('totalPages', 0)  # Return total pages from response
+        data = response.json()
+        return data.get('totalPages', 0)
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching total pages: {e}")
+        print(f"Request error: {str(e)}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {str(e)}")
+        print(f"Raw response content: {response.text}")
         return None
 
 def fetch_forum_replies(topic_id, forums, page):
