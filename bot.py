@@ -734,7 +734,7 @@ async def send_support_message():
                         print(f"Failed to send support message to channel {channel_id}: {e}")
 
         # Wait for 4 hours
-        await asyncio.sleep(28800)  # 4 hours in seconds
+        await asyncio.sleep(604800)  # 4 hours in seconds
 
 
 @bot.event
