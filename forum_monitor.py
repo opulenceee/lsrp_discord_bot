@@ -3,8 +3,6 @@ import requests
 import json
 import time
 from dotenv import load_dotenv
-import discord
-from discord.ext import commands
 import asyncio
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -14,12 +12,6 @@ load_dotenv()  # Load environment variables from .env file
 # Environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 API_KEY = os.getenv('API_KEY')
-
-
-intents = discord.Intents.default()
-intents.messages = True  
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Constants
 API_URL = "https://community.ls-rp.com/api/forums/topics/{}/posts"  # Base URL with a placeholder for topic ID
@@ -33,58 +25,19 @@ def format_date(date_str):
     dt = datetime.fromisoformat(date_str[:-1])  # Remove the 'Z' and convert
     return dt.strftime("%B %d, %Y at %I:%M %p")  # Format date
 
-
-def clean_html(raw_html):
-    """Strip HTML tags and extract information about images or videos from the given HTML string."""
-    print("Raw HTML:", raw_html)  # Debug: print the raw HTML
-    soup = BeautifulSoup(raw_html, 'html.parser')
-
-    # Extract the text
-    text = soup.get_text(strip=True)
-    print("Extracted Text:", text)  # Debug: print the extracted text
-
-    # Initialize media presence flags
-    contains_images = False
-    contains_videos = False
-
-    # Check for images
-    for img in soup.find_all('img'):
-        if img.get('src'):
-            contains_images = True  # Set flag if any image is found
-
-    # Check for videos
-    for video in soup.find_all('iframe'):
-        if video.get('src'):
-            contains_videos = True  # Set flag if any video is found
-
-    # Prepare the response content
-    media_message = ""
-    if contains_images and contains_videos:
-        media_message = "**This reply contains images and videos.**"
-    elif contains_images:
-        media_message = "**This reply contains images.**"
-    elif contains_videos:
-        media_message = "**This reply contains videos.**"
-
-    # Combine text and media message, if media message exists
-    if media_message:
-        return f"{text}\n{media_message}"
-    return text  # Return just the text if no media message
-
 def fetch_total_pages(topic_id, forums):
-    """Fetch total pages from the forum API based on topic ID and forums."""
+    """Fetch the total number of pages for a topic."""
     url = API_URL.format(topic_id)
-    params = {
-        "forums": forums,
-        "perPage": PER_PAGE,
-        "page": 1
-    }
-
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
+        'Authorization': f'Bearer {API_KEY}',
+        'Content-Type': 'application/json'
     }
-
+    params = {
+        'forums': forums,
+        'perPage': PER_PAGE,
+        'page': 1
+    }
+    
     try:
         print(f"Making request to URL: {url}")
         print(f"With params: {params}")
@@ -92,45 +45,41 @@ def fetch_total_pages(topic_id, forums):
         
         response = requests.get(url, headers=headers, params=params)
         print(f"Response status code: {response.status_code}")
-        print(f"Response headers: {response.headers}")
-        print(f"Response content: {response.text[:500]}")  # Print first 500 chars of response
         
-        response.raise_for_status()
-        data = response.json()
-        return data.get('totalPages', 0)
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {str(e)}")
-        return None
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {str(e)}")
-        print(f"Raw response content: {response.text}")
+        if response.status_code == 200:
+            data = response.json()
+            total_pages = data.get('totalPages', 0)
+            return total_pages
+        else:
+            print(f"Error fetching total pages: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Exception while fetching total pages: {e}")
         return None
 
 def fetch_forum_replies(topic_id, forums, page):
-    """Fetch replies from the forum API based on topic ID, forums, and pagination."""
-    url = API_URL.format(topic_id)  # Construct the URL with the topic ID
-    params = {
-        "forums": forums,
-        "perPage": PER_PAGE,
-        "page": page  # Specify the page number
-    }
-
+    """Fetch replies from a specific page of a topic."""
+    url = API_URL.format(topic_id)
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
+        'Authorization': f'Bearer {API_KEY}',
+        'Content-Type': 'application/json'
     }
-
+    params = {
+        'forums': forums,
+        'perPage': PER_PAGE,
+        'page': page
+    }
+    
     try:
         response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-
-        # Debugging: Print the full response to understand its structure
-        data = response.json()
-
-        # Fetch replies from the 'results' key
-        return data.get('results', [])  # Return results from the response
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching data from API: {e}")
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('results', [])
+        else:
+            print(f"Error fetching replies: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Exception while fetching replies: {e}")
         return None
 
 def save_replies_to_file(replies, topic_id):
@@ -141,16 +90,23 @@ def save_replies_to_file(replies, topic_id):
     with open(json_file_path, "w") as file:
         json.dump(replies, file)
 
-async def main():
-    # Fetch the total pages first
-    total_pages = fetch_total_pages(TOPIC_ID, FORUMS)  # Get the total pages from the API
-    print(f"Total pages available: {total_pages}")
-    if total_pages is not None and total_pages > 0:
-        # Fetch the replies from the last page
-        last_page_replies = fetch_forum_replies(TOPIC_ID, FORUMS, total_pages)
-        if last_page_replies:
-            save_replies_to_file(last_page_replies, TOPIC_ID)  # Save using the topic ID in the filename
-
+async def monitor_forum():
+    """Monitor forum for new replies."""
+    while True:
+        try:
+            # Fetch the total pages first
+            total_pages = fetch_total_pages(TOPIC_ID, FORUMS)
+            if total_pages is not None and total_pages > 0:
+                # Fetch the replies from the last page
+                last_page_replies = fetch_forum_replies(TOPIC_ID, FORUMS, total_pages)
+                if last_page_replies:
+                    save_replies_to_file(last_page_replies, TOPIC_ID)
             
+            await asyncio.sleep(240)  # Check every 4 minutes
+            
+        except Exception as e:
+            print(f"Error in forum monitoring: {e}")
+            await asyncio.sleep(60)  # Wait a minute before retrying
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(monitor_forum())

@@ -5,42 +5,163 @@ import os
 import asyncio
 import subprocess
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from forum_monitor import fetch_total_pages, fetch_forum_replies, save_replies_to_file
 from discord.ui import Button, View
 from discord import app_commands
+from collections import defaultdict
+import requests
+import logging
+import sys
+import aiohttp
+import threading
+import queue
+from channel_streamer import handle_log_message, stream_log_history
 
 
 
 load_dotenv()  # Load environment variables from .env file
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+LOG_WEBHOOK_URL = os.getenv('LOG_WEBHOOK_URL')  # Add this to your .env file
+BOT_OWNER_ID = int(os.getenv('BOT_OWNER_ID', '804688024704253986'))  # Your Discord user ID
 FORUMS = 749      # Forums parameter (fixed)
 PER_PAGE = 15     # Number of replies per page (fixed)
 CONFIG_FILE = 'bot_config.json'
 DATA_DIR = 'data'
 
+# Configure logging
+class DiscordWebhookHandler(logging.Handler):
+    def __init__(self, webhook_url, log_queue):
+        super().__init__()
+        self.webhook_url = webhook_url
+        self.log_queue = log_queue
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.log_queue.put(msg)
+        except Exception:
+            self.handleError(record)
+
+async def discord_log_worker(webhook_url, log_queue):
+    session = aiohttp.ClientSession()
+    while True:
+        msg = await asyncio.get_event_loop().run_in_executor(None, log_queue.get)
+        try:
+            # Split message if it's too long
+            if len(msg) > 2000:
+                chunks = [msg[i:i+1990] for i in range(0, len(msg), 1990)]
+                for chunk in chunks:
+                    await session.post(
+                        webhook_url,
+                        json={"content": f"```{chunk}```"}
+                    )
+            else:
+                await session.post(
+                    webhook_url,
+                    json={"content": f"```{msg}```"}
+                )
+        except Exception as e:
+            print(f"Error sending log to Discord webhook: {e}")
+        finally:
+            log_queue.task_done()
+
+# Setup logging configuration
+def setup_logging():
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(console_handler)
+    
+    # Discord webhook handler
+    log_queue = queue.Queue()
+    if LOG_WEBHOOK_URL:
+        discord_handler = DiscordWebhookHandler(LOG_WEBHOOK_URL, log_queue)
+        discord_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(discord_handler)
+        # Start the async log worker after the event loop is running (see on_ready)
+        logger.discord_log_queue = log_queue
+    else:
+        print("Warning: LOG_WEBHOOK_URL not set in .env file. Discord logging disabled.")
+    
+    return logger
+
+# Initialize logger
+logger = setup_logging()
+
+
+
 intents = discord.Intents.default()
 intents.messages = True  
 intents.message_content = True
+intents.guilds = True  # Enable guilds intent
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+class CustomBot(commands.Bot):
+    async def setup_hook(self) -> None:
+        self.owner_id = BOT_OWNER_ID
 
+bot = CustomBot(command_prefix='!', intents=intents)
 
-@bot.tree.command(name="creator", description="Learn more about who created this bot.")
-async def creator(interaction: discord.Interaction):
-    # Create a button that links to your website
-    button = Button(label="Visit Official Website", url="https://opulenceee.wtf")
-    
-    # Create a view to hold the button
-    view = View()
-    view.add_item(button)
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    try:
+        # Start Discord log worker if needed
+        if LOG_WEBHOOK_URL and hasattr(logger, 'discord_log_queue'):
+            if not hasattr(bot, '_discord_log_worker_started'):
+                bot.loop.create_task(discord_log_worker(LOG_WEBHOOK_URL, logger.discord_log_queue))
+                bot._discord_log_worker_started = True
+        
+        # Log number of configured guilds
+        settings = load_config()
+        guild_count = len(settings)
+        
+        logger.info(f'Bot is ready! Logged in as {bot.user.name}')
+        logger.info(f"Bot owner ID: {bot.owner_id}")
+        logger.info(f"Bot is configured in {guild_count} guilds:")
+        
+        # Get all guilds the bot is actually in
+        bot_guilds = {str(g.id): g.name for g in bot.guilds}
+        
+        await stream_log_history(bot, limit=100)
 
-    # Send a message with the button and creator info
-    await interaction.response.send_message(
-        content="This bot was created by **opulenceee.**. You can find more information about me at my official website.",
-        view=view
-    )
+        # Log each configured guild with its status
+        for guild_id, config in settings.items():
+            guild_name = config.get('guild_name', 'Unknown')
+            if guild_id in bot_guilds:
+                logger.info(f"- {guild_name} (Active)")
+            else:
+                logger.info(f"- {guild_name} (Bot not in server)")
+        
+        # Send startup notification to all configured channels
+        if settings:
+            for server_id, config in settings.items():
+                if 'channel_id' in config:
+                    channel = bot.get_channel(int(config['channel_id']))
+                    if channel:
+                        embed = discord.Embed(
+                            title="Bot Status",
+                            description="Bot is now online and monitoring!",
+                            color=discord.Color.green()
+                        )
+                        embed.add_field(name="Active Features", value="• Forum Monitoring\n• Player List Updates\n• Server Status Monitoring\n• Watchlist Alerts", inline=False)
+                        await channel.send(embed=embed)
+            
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+    # Check if config exists on startup
+    settings = load_config()
+    if settings:
+        bot.loop.create_task(update_player_list_and_forum_comments())
+        bot.loop.create_task(monitor_replies())
+        bot.loop.create_task(monitor_server_status())
+        bot.loop.create_task(check_watchlists())
+        bot.loop.create_task(they_gotta_go())
 
 # Loading blocked guilds from file
 def load_blocked_guilds():
@@ -141,17 +262,18 @@ def is_configured(server_id):
     server_settings = load_config()
     return server_id in server_settings
 
-tasks_started = False
-
 @bot.tree.command(name="setup", description="Configure bot settings for this server")
 @app_commands.check(check_guild)
 async def setup(interaction: discord.Interaction, channel_id: str, topic_id: str = None):
     if not interaction.user.guild_permissions.administrator:
+        logger.warning(f"User {interaction.user} attempted to use setup command without admin permissions")
         await interaction.response.send_message("You must have administrator permissions to use this command.", ephemeral=True)
         return
 
     settings = load_config()
     guild_id = str(interaction.guild_id)
+    guild_name = interaction.guild.name  # Get the guild name
+    logger.info(f"Setting up bot for guild {guild_name} ({guild_id}) with channel {channel_id}")
 
     if guild_id not in settings:
         settings[guild_id] = {}
@@ -159,10 +281,12 @@ async def setup(interaction: discord.Interaction, channel_id: str, topic_id: str
     try:
         channel_id = int(channel_id)
         settings[guild_id]["notification_channel_id"] = channel_id
+        settings[guild_id]["guild_name"] = guild_name  # Store the guild name
         if topic_id:
             settings[guild_id]["topic_id"] = topic_id
 
         save_config(settings)
+        logger.info(f"Successfully configured bot for guild {guild_name} ({guild_id})")
 
         msg_parts = []
         msg_parts.append(f"Notification channel set to <#{channel_id}>.")
@@ -171,13 +295,8 @@ async def setup(interaction: discord.Interaction, channel_id: str, topic_id: str
 
         await interaction.response.send_message(" ".join(msg_parts))
 
-        global tasks_started
-        if not tasks_started:
-            bot.loop.create_task(update_player_list_and_forum_comments())
-            bot.loop.create_task(monitor_replies())
-            tasks_started = True
-
     except ValueError:
+        logger.error(f"Invalid channel ID format provided: {channel_id}")
         await interaction.response.send_message("Invalid channel ID format. Please provide a valid number.", ephemeral=True)
 
 
@@ -450,35 +569,72 @@ async def testers(interaction: discord.Interaction):
 @bot.tree.command(name="online", description="Display all online players")
 @app_commands.check(check_guild)
 async def online(interaction: discord.Interaction):
-    guild_id = str(interaction.guild_id)
+    try:
+        # Check if interaction is still valid before any response
+        if interaction.response.is_done():
+            logger.debug("Interaction already responded to in /online")
+            return
+            
+        guild_id = str(interaction.guild_id)
 
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
-        return
+        # Check configuration before deferring
+        if not is_configured(guild_id):
+            await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.", ephemeral=True)
+            return
 
-    player_data = load_player_data()
-    if not player_data or "players" not in player_data:
-        await interaction.response.send_message("No player data available.")
-        return
+        # Defer the interaction to prevent timeout
+        try:
+            await interaction.response.defer()
+        except discord.NotFound:
+            logger.debug("Interaction expired before defer() in /online")
+            return
+        except discord.errors.InteractionResponded:
+            logger.debug("Interaction already responded to before defer() in /online")
+            return
 
-    player_names = [player["characterName"] for player in player_data["players"]]
-    player_count = len(player_names)
-    response = "\n".join(player_names)
+        player_data = load_player_data()
+        if not player_data or "players" not in player_data:
+            try:
+                await interaction.followup.send("No player data available.")
+            except discord.NotFound:
+                logger.debug("Interaction expired before followup.send() in /online [no data]")
+            except discord.errors.WebhookTokenMissing:
+                logger.debug("Webhook token missing - interaction likely expired")
+            return
 
-    embed = discord.Embed(title=f"Online Players ({player_count}):", color=discord.Color.red())
-    
-    # Handle long responses
-    if len(response) > 4096:
-        chunks = [response[i:i + 4096] for i in range(0, len(response), 4096)]
-        embed.description = chunks[0]
-        await interaction.response.send_message(embed=embed)
-        
-        for chunk in chunks[1:]:
-            embed_chunk = discord.Embed(color=discord.Color.red(), description=chunk)
-            await interaction.followup.send(embed=embed_chunk)
-    else:
-        embed.description = response
-        await interaction.response.send_message(embed=embed)
+        player_names = [player["characterName"] for player in player_data["players"]]
+        player_count = len(player_names)
+        response = "\n".join(player_names)
+        embed = discord.Embed(title=f"Online Players ({player_count})", color=discord.Color.red())
+
+        try:
+            if len(response) > 4096:
+                chunks = [response[i:i + 4096] for i in range(0, len(response), 4096)]
+                embed.description = chunks[0]
+                await interaction.followup.send(embed=embed)
+                for chunk in chunks[1:]:
+                    embed_chunk = discord.Embed(description=chunk, color=discord.Color.red())
+                    await interaction.followup.send(embed=embed_chunk)
+            else:
+                embed.description = response if response else "No players online."
+                await interaction.followup.send(embed=embed)
+        except discord.NotFound:
+            logger.debug("Interaction expired before final followup.send() in /online")
+        except discord.errors.WebhookTokenMissing:
+            logger.debug("Webhook token missing - interaction likely expired")
+
+    except Exception as e:
+        logger.error(f"Unhandled error in /online: {e}")
+        # Try to send error message if interaction hasn't been responded to
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+            else:
+                await interaction.followup.send("An error occurred while processing your request.", ephemeral=True)
+        except:
+            pass  # Silently fail if we can't send error message
+
+
 
 @bot.tree.command(name="check", description="Check if a player is logged in.")
 @app_commands.check(check_guild)
@@ -516,63 +672,411 @@ async def check(interaction: discord.Interaction, name: str = None):
 @app_commands.check(check_guild)
 @app_commands.describe(full_name="The full name of the player (Firstname_Lastname).")
 async def last_online(interaction: discord.Interaction, full_name: str):
-    last_seen_data = load_last_seen()  # Load only last seen data
+    try:
+        # Validate input BEFORE any interaction response
+        if not full_name or "_" not in full_name:
+            await interaction.response.send_message("Please provide a name in the format Firstname_Lastname.", ephemeral=True)
+            return
+        
+        # Check if interaction is still valid before deferring
+        if interaction.response.is_done():
+            logger.debug("Interaction already responded to in /last_online")
+            return
+            
+        try:
+            await interaction.response.defer()
+        except discord.NotFound:
+            logger.debug("Interaction expired before defer() in /last_online")
+            return
+        except discord.errors.InteractionResponded:
+            logger.debug("Interaction already responded to before defer() in /last_online")
+            return
 
-    # Check if the player's last seen data exists
-    last_seen_time = last_seen_data.get(full_name)
+        last_seen_data = load_last_seen()
+        last_seen_time = last_seen_data.get(full_name)
 
-    if last_seen_time:
-        # Convert the last seen time to a datetime object
-        last_seen_dt = datetime.strptime(last_seen_time, "%Y-%m-%dT%H:%M:%S.%fZ")
-        readable_time = last_seen_dt.strftime("%Y-%m-%d %I:%M %p")  # Format to 'YYYY-MM-DD HH:MM AM/PM'
+        try:
+            if last_seen_time:
+                last_seen_dt = datetime.strptime(last_seen_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+                readable_time = last_seen_dt.strftime("%Y-%m-%d %I:%M %p")
 
-        # Create an embed message for Discord
-        embed = discord.Embed(title="Player Status", color=discord.Color.red())
-        embed.add_field(name="Character Name", value=full_name, inline=False)
-        embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
+                embed = discord.Embed(title="Player Status", color=discord.Color.red())
+                embed.add_field(name="Character Name", value=full_name, inline=False)
+                embed.add_field(name="Last Seen", value=f"**{readable_time}**", inline=False)
 
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(f"The player **{full_name}** does not appear to have a recorded last seen time.")
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(f"The player **{full_name}** does not appear to have a recorded last seen time.")
+        except discord.NotFound:
+            logger.debug("Interaction expired before followup.send() in /last_online")
+        except discord.errors.WebhookTokenMissing:
+            logger.debug("Webhook token missing - interaction likely expired")
 
-last_reply_ids = {}
+    except Exception as e:
+        logger.error(f"Unhandled error in /last_online: {e}")
+        # Try to send error message if interaction hasn't been responded to
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+            else:
+                await interaction.followup.send("An error occurred while processing your request.", ephemeral=True)
+        except:
+            pass  # Silently fail if we can't send error message
 
-async def monitor_replies():
-    settings = load_config()
-    if not settings:
-        print("No configuration found. Monitor not starting.")
-        return  # Don't start monitoring if no configuration is set up.
+
+# Watchlist Management (Per-Guild)
+def load_watchlists():
+    """Load all guilds' watchlists from file."""
+    watchlists_file = os.path.join(DATA_DIR, 'watchlists.json')
+    if os.path.exists(watchlists_file):
+        with open(watchlists_file, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_watchlists(watchlists):
+    """Save all guilds' watchlists to file."""
+    watchlists_file = os.path.join(DATA_DIR, 'watchlists.json')
+    with open(watchlists_file, 'w') as f:
+        json.dump(watchlists, f, indent=4)
+
+def get_guild_watchlist(guild_id):
+    watchlists = load_watchlists()
+    return watchlists.get(str(guild_id), [])
+
+def set_guild_watchlist(guild_id, watchlist):
+    watchlists = load_watchlists()
+    watchlists[str(guild_id)] = watchlist
+    save_watchlists(watchlists)
+
+async def check_watchlists():
+    """Check all guilds' watchlists and send notifications to their channels."""
+    while True:
+        try:
+            watchlists = load_watchlists()
+            player_data = load_player_data()
+            current_players = {p['characterName'] for p in player_data.get('players', [])}
+            settings = load_config()
+            for guild_id, watchlist in watchlists.items():
+                channel_id = None
+                if guild_id in settings:
+                    channel_id = settings[guild_id].get('notification_channel_id')
+                if not channel_id:
+                    continue
+                channel = bot.get_channel(int(channel_id))
+                if not channel:
+                    continue
+                for player in watchlist:
+                    if player in current_players:
+                        try:
+                            await channel.send(f"**{player}** is now online!")
+                        except Exception as e:
+                            print(f"Error sending watchlist notification: {e}")
+            await asyncio.sleep(30)
+        except Exception as e:
+            print(f"Error checking watchlists: {e}")
+            await asyncio.sleep(30)
+
+# They Gotta Go Monitoring
+they_gotta_go_names = []
+THEY_GOTTA_GO_CHANNEL = ''
+THEY_GOTTA_GO_GUILD_ID = ''
+last_online_status = {}
+
+async def they_gotta_go():
+    """Monitor specific players and send notifications when they come online."""
+    print("they_gotta_go has been started")
+    global last_online_status
 
     while True:
-        settings = load_config()
-        for guild_id, config in settings.items():
-            topic_id = config.get("topic_id")
-            channel_id = config.get("notification_channel_id")
+        if not last_online_status:
+            last_online_status.update({about_to_die.replace(" ", "_"): False for about_to_die in they_gotta_go_names})
+
+        player_data = load_player_data()
+        online_players = [player["characterName"] for player in player_data.get("players", [])]
+
+        if THEY_GOTTA_GO_CHANNEL:
+            try:
+                channel = bot.get_channel(int(THEY_GOTTA_GO_CHANNEL))
+            except ValueError:
+                print(f"Invalid channel ID: {THEY_GOTTA_GO_CHANNEL}")
+                await asyncio.sleep(30)
+                continue
+        else:
+            print("THEY_GOTTA_GO_CHANNEL is empty!")
+            await asyncio.sleep(30)
+            continue
+
+        if channel is None:
+            print(f"Failed to retrieve channel with ID {THEY_GOTTA_GO_CHANNEL}")
+            await asyncio.sleep(30)
+            continue
+
+        if channel.guild.id != int(THEY_GOTTA_GO_GUILD_ID):
+            print(f"Channel does not belong to the specified guild ID {THEY_GOTTA_GO_GUILD_ID}")
+            await asyncio.sleep(30)
+            continue
+
+        for about_to_die in they_gotta_go_names:
+            about_to_die_formatted = about_to_die.replace(" ", "_")
+            print(f"Checking player: {about_to_die_formatted}")
+
+            if about_to_die_formatted in online_players and not last_online_status[about_to_die_formatted]:
+                await channel.send(f"@everyone {about_to_die} has just logged in!")
+                last_online_status[about_to_die_formatted] = True
+            elif about_to_die_formatted not in online_players and last_online_status[about_to_die_formatted]:
+                last_online_status[about_to_die_formatted] = False
+
+        await asyncio.sleep(30)
+
+# Server Status Tracking
+def check_server_status():
+    """Check if the server is responding."""
+    try:
+        response = requests.get("https://ucp.ls-rp.com/", timeout=10)
+        return response.status_code == 200
+    except:
+        return False
+
+async def monitor_server_status():
+    """Monitor server status and send notifications."""
+    last_status = True  # Assume server is up initially
+    while True:
+        try:
+            current_status = check_server_status()
             
-            if not topic_id or not channel_id:
+            # If status changed
+            if current_status != last_status:
+                settings = load_config()
+                for guild_id, config in settings.items():
+                    channel_id = config.get("notification_channel_id")
+                    if channel_id:
+                        try:
+                            channel = bot.get_channel(int(channel_id))
+                            if channel:
+                                if current_status:
+                                    await channel.send("<@804688024704253986> Server is back online! ✅")
+                                else:
+                                    await channel.send("<@804688024704253986> Server appears to be down! ❌")
+                        except Exception as e:
+                            print(f"Error sending status notification to channel {channel_id}: {e}")
+                
+                last_status = current_status
+            
+            await asyncio.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Error monitoring server status: {e}")
+            await asyncio.sleep(60)
+
+@bot.tree.command(name="status", description="Check server status")
+@commands.is_owner()  # Only bot owner can use this command
+async def status(interaction: discord.Interaction):
+    """Check current server status."""
+    is_up = check_server_status()
+    
+    embed = discord.Embed(title="Server Status", color=discord.Color.green() if is_up else discord.Color.red())
+    embed.description = "Server is online! ✅" if is_up else "Server is down! ❌"
+    
+    # Add uptime information if available
+    uptime_file = os.path.join(DATA_DIR, 'uptime.json')
+    if os.path.exists(uptime_file):
+        with open(uptime_file, 'r') as f:
+            uptime_data = json.load(f)
+            last_restart = datetime.fromisoformat(uptime_data.get('last_restart', datetime.utcnow().isoformat()))
+            uptime = datetime.utcnow() - last_restart
+            embed.add_field(name="Uptime", value=str(uptime).split('.')[0], inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="watch", description="Manage your player watchlist")
+@commands.is_owner()  # Only bot owner can use this command
+@app_commands.check(check_guild)
+@app_commands.describe(
+    action="Action to perform: add, remove, edit, or list",
+    player="Player name(s), comma or space separated (optional for edit/list)"
+)
+@app_commands.choices(
+    action=[
+        app_commands.Choice(name="add", value="add"),
+        app_commands.Choice(name="remove", value="remove"),
+        app_commands.Choice(name="edit", value="edit"),
+        app_commands.Choice(name="list", value="list"),
+    ]
+)
+async def watch(
+    interaction: discord.Interaction,
+    action: app_commands.Choice[str],
+    player: str = None
+):
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.errors.NotFound:
+        return  # Interaction expired or already responded to
+    guild_id = str(interaction.guild_id)
+    watchlist = get_guild_watchlist(guild_id)
+    action_value = action.value
+    if action_value == "add" and player:
+        names = [n.strip() for n in player.replace(",", " ").split() if n.strip()]
+        added = []
+        already = []
+        for name in names:
+            if name not in watchlist:
+                watchlist.append(name)
+                added.append(name)
+            else:
+                already.append(name)
+        set_guild_watchlist(guild_id, watchlist)
+        msg = []
+        if added:
+            msg.append(f"Added to this server's watchlist: {', '.join(added)}.")
+        if already:
+            msg.append(f"Already in watchlist: {', '.join(already)}.")
+        if not msg:
+            msg = ["No valid names provided."]
+        await interaction.followup.send(" ".join(msg), ephemeral=True)
+    elif action_value == "remove" and player:
+        # Normalize both input and stored names for robust matching
+        input_names = [n.strip() for n in player.replace(",", " ").split() if n.strip()]
+        # Create a mapping of normalized name -> original name in watchlist
+        normalized_watchlist = {n.strip().lower(): n for n in watchlist}
+        removed = []
+        not_found = []
+        for name in input_names:
+            norm = name.strip().lower()
+            if norm in normalized_watchlist:
+                # Remove the original name from the watchlist
+                watchlist.remove(normalized_watchlist[norm])
+                removed.append(normalized_watchlist[norm])
+            else:
+                not_found.append(name)
+        set_guild_watchlist(guild_id, watchlist)
+        msg = []
+        if removed:
+            msg.append(f"Removed from this server's watchlist: {', '.join(removed)}.")
+        if not_found:
+            msg.append(f"Not in watchlist: {', '.join(not_found)}.")
+        if not msg:
+            msg = ["No valid names provided."]
+        await interaction.followup.send(" ".join(msg), ephemeral=True)
+    elif action_value == "edit":
+        if not player:
+            # Show current list and instructions
+            if watchlist:
+                embed = discord.Embed(title="Edit Watchlist", color=discord.Color.orange())
+                embed.description = ("Current watchlist:\n" + "\n".join(watchlist) +
+                    "\n\nTo replace the list, use:\n`/watch edit Name1 Name2 ...` or `/watch edit Name1,Name2,...`\n" +
+                    "This will replace the entire watchlist with the names you provide.")
+            else:
+                embed = discord.Embed(title="Edit Watchlist", color=discord.Color.orange())
+                embed.description = ("The watchlist is currently empty.\n" +
+                    "To set a new list, use:\n`/watch edit Name1 Name2 ...` or `/watch edit Name1,Name2,...`")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            # Replace the list
+            names = [n.strip() for n in player.replace(",", " ").split() if n.strip()]
+            unique_names = []
+            seen = set()
+            for name in names:
+                if name not in seen:
+                    unique_names.append(name)
+                    seen.add(name)
+            set_guild_watchlist(guild_id, unique_names)
+            embed = discord.Embed(title="Watchlist Updated", color=discord.Color.green())
+            if unique_names:
+                embed.description = "New watchlist:\n" + "\n".join(unique_names)
+            else:
+                embed.description = "The watchlist is now empty."
+            await interaction.followup.send(embed=embed, ephemeral=True)
+    elif action_value == "list":
+        if watchlist:
+            embed = discord.Embed(title=f"Watchlist for this server", color=discord.Color.red())
+            embed.description = "\n".join(watchlist)
+        else:
+            embed = discord.Embed(title="Watchlist is Empty", color=discord.Color.red())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    else:
+        await interaction.followup.send("Invalid action. Use 'add', 'remove', 'edit', or 'list'.", ephemeral=True)
+
+
+@bot.event
+async def on_message(message):
+    await handle_log_message(message)
+    await bot.process_commands(message)  
+
+@bot.event
+async def on_app_command(interaction: discord.Interaction):
+    """Log all slash command executions"""
+    command_name = interaction.command.name if interaction.command else "Unknown"
+    user = interaction.user
+    guild = interaction.guild
+    channel = interaction.channel
+    
+    log_message = (
+        f"Command: /{command_name}\n"
+        f"User: {user} ({user.id})\n"
+        f"Guild: {guild.name if guild else 'DM'} ({guild.id if guild else 'N/A'})\n"
+        f"Channel: #{channel.name if channel else 'DM'} ({channel.id if channel else 'N/A'})"
+    )
+    
+    logger.info(log_message)
+
+@bot.event
+async def on_command(ctx):
+    """Log all prefix command executions"""
+    command_name = ctx.command.name if ctx.command else "Unknown"
+    user = ctx.author
+    guild = ctx.guild
+    channel = ctx.channel
+    
+    log_message = (
+        f"Command: !{command_name}\n"
+        f"User: {user} ({user.id})\n"
+        f"Guild: {guild.name if guild else 'DM'} ({guild.id if guild else 'N/A'})\n"
+        f"Channel: #{channel.name if channel else 'DM'} ({channel.id if channel else 'N/A'})"
+    )
+    
+    logger.info(log_message)
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Log command errors"""
+    logger.error(f"Command error: {str(error)}")
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("Command not found.")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("You don't have permission to use this command.")
+    else:
+        await ctx.send(f"An error occurred: {str(error)}")
+
+async def monitor_replies():
+    """Monitor forum replies and send notifications."""
+    while True:
+        try:
+            settings = load_config()
+            if not settings:
+                await asyncio.sleep(60)
                 continue
 
-            # Dynamically fetch replies for the current topic_id
-            total_pages = fetch_total_pages(topic_id, FORUMS)
-            if total_pages is None or total_pages == 0:
-                print(f"No pages available to monitor for topic ID {topic_id}.")
-                await asyncio.sleep(240)  # Sleep longer if no pages available
-                continue
+            for server_id, config in settings.items():
+                if 'topic_id' in config and 'channel_id' in config:
+                    topic_id = config['topic_id']
+                    channel_id = config['channel_id']
+                    
+                    # Get the latest replies
+                    replies = fetch_forum_replies(topic_id)
+                    if not replies:
+                        continue
 
-            last_page_replies = fetch_forum_replies(topic_id, FORUMS, total_pages)
-            if last_page_replies:
-                save_replies_to_file(last_page_replies, topic_id)  # Update this to save to specific file
-
-                # Check for new replies since the last known ID
-                latest_reply = last_page_replies[-1]
-                latest_reply_id = latest_reply["id"]
-
-                # If this is a new reply, send notification
-                if last_reply_ids.get(guild_id) != latest_reply_id:
-                    last_reply_ids[guild_id] = latest_reply_id
+                    # Get the latest reply
+                    latest_reply = replies[0]
+                    
+                    # Send notification for the latest reply
                     await send_notification(latest_reply, channel_id)
 
-            await asyncio.sleep(240)  #
+            await asyncio.sleep(60)  # Check every minute
+        except Exception as e:
+            print(f"Error in monitor_replies: {e}")
+            await asyncio.sleep(60)  # Wait before retrying
 
 async def send_notification(new_reply, channel_id):
     """Send a notification to the specified channel when a new reply is detected."""
@@ -612,145 +1116,45 @@ process = None
 forum_process = None
 
 async def update_player_list_and_forum_comments():
+    """Update player list and forum comments periodically."""
     global process
     global forum_process
-    if process is None and forum_process is None:
-       process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
-       forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python','forum_monitor.py'])
-        # Run your setup_db.py script without blocking
-
-
+    
     while True:
-        await asyncio.sleep(15)  # Continue to wait 30 seconds
-        # await check_for_serbians_online()  # Just check for online players, no subprocess needed
-
-they_gotta_go_names = []
-THEY_GOTTA_GO_CHANNEL = ''
-THEY_GOTTA_GO_GUILD_ID = ''
-last_online_status = {}
-
-async def they_gotta_go():
-    print("they_gotta_go has been started")
-    global last_online_status
-
-    while True:
-        if not last_online_status:
-            last_online_status.update({about_to_die.replace(" ", "_"): False for about_to_die in they_gotta_go_names})
-
-        player_data = load_player_data()
-        online_players = [player["characterName"] for player in player_data.get("players", [])]
-
-        if THEY_GOTTA_GO_CHANNEL:
-            try:
-                channel = bot.get_channel(int(THEY_GOTTA_GO_CHANNEL))
-            except ValueError:
-                # Handle the case where the channel ID is invalid
-                print(f"Invalid channel ID: {THEY_GOTTA_GO_CHANNEL}")
-                await asyncio.sleep(30)  # Wait before retrying
-                continue
-        else:
-            print("THEY_GOTTA_GO_CHANNEL is empty!")
-            await asyncio.sleep(30)  # Wait before retrying
-            continue
-
-        if channel is None:
-            print(f"Failed to retrieve channel with ID {THEY_GOTTA_GO_CHANNEL}")
-            await asyncio.sleep(30)  # Wait before retrying
-            continue
-
-        if channel.guild.id != int(THEY_GOTTA_GO_GUILD_ID):
-            print(f"Channel does not belong to the specified guild ID {THEY_GOTTA_GO_GUILD_ID}")
-            await asyncio.sleep(30)  # Wait before retrying
-            continue
-
-        for about_to_die in they_gotta_go_names:
-            about_to_die_formatted = about_to_die.replace(" ", "_")
-            print(f"Checking player: {about_to_die_formatted}")  # debugging
-
-            if about_to_die_formatted in online_players and not last_online_status[about_to_die_formatted]:
-                await channel.send(f"@everyone {about_to_die} has just logged in!")
-                last_online_status[about_to_die_formatted] = True  # player logged in
-
-            elif about_to_die_formatted not in online_players and last_online_status[about_to_die_formatted]:
-                last_online_status[about_to_die_formatted] = False  # player logged out
-
-        await asyncio.sleep(30)  # Run every 30 seconds
-
-async def send_support_message():
-    """Send support message every 4 hours to all configured channels."""
-    while True:
-        settings = load_config()
-        if settings:
-            embed = discord.Embed(
-                title="❤️ Support LSRP Bot Development!",
-                description=(
-                    "**Hey everyone!** Thanks for using the LSRP Bot!\n\n"
-                    "🤖 **What this bot offers:**\n"
-                    "• Real-time player tracking\n"
-                    "• Forum thread monitoring\n"
-                    "• Admin & tester status checks\n"
-                    "• Last seen player tracking\n"
-                    "And much more!\n\n"
-                    "🌟 **If you're finding this bot useful**, consider supporting its development! "
-                    "Every coffee helps keep the servers running and features coming!"
-                ),
-                color=discord.Color.red()
-            )
+        try:
+            # Start the setup_db script if it's not running
+            if process is None:
+                print("Starting UCP monitoring process")
+                process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
             
-            # Add footer with bot stats
-            embed.set_footer(text=f"Currently serving {len(settings)} communities!")
+            # Start the forum_monitor.py script if it's not running
+            if forum_process is None:
+                print("Starting forum monitoring process")
+                forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
             
-            # Add timestamp to show when the message was sent
-            embed.timestamp = datetime.now()
-
-            # Create a view with multiple buttons
-            view = View()
+            # Check if processes are still running
+            if process and process.poll() is not None:
+                print("UCP monitoring process died, restarting...")
+                try:
+                    # Clean up any zombie Chrome processes before restarting
+                    subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+                except:
+                    pass
+                
+                # Wait a bit before restarting to avoid rapid restarts
+                await asyncio.sleep(60)  # Increased from 30 to 60 seconds
+                process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
             
-            # Support button
-            support_button = Button(
-                label="☕ Buy Me a Coffee", 
-                url="https://buymeacoffee.com/opulenceee",
-                style=discord.ButtonStyle.link
-            )
-            view.add_item(support_button)
+            if forum_process and forum_process.poll() is not None:
+                print("Forum monitoring process died, restarting...")
+                await asyncio.sleep(30)  # Increased from 10 to 30 seconds
+                forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
             
-            # Add website button if you have one
-            website_button = Button(
-                label="🌐 Visit Website", 
-                url="https://opulenceee.wtf",
-                style=discord.ButtonStyle.link
-            )
-            view.add_item(website_button)
-
-            # Send to all configured channels
-            for guild_id, config in settings.items():
-                channel_id = config.get("notification_channel_id")
-                if channel_id:
-                    try:
-                        channel = bot.get_channel(int(channel_id))
-                        if channel:
-                            await channel.send(embed=embed, view=view)
-                    except Exception as e:
-                        print(f"Failed to send support message to channel {channel_id}: {e}")
-
-        # Wait for 4 hours
-        await asyncio.sleep(604800)  # 4 hours in seconds
-
-
-@bot.event
-async def on_ready():
-    global tasks_started
-    await bot.tree.sync()
-    print(f'Logged in as {bot.user}')
-
-    # Check if config exists on startup
-    config = load_config()
-    if config and not tasks_started:
-        bot.loop.create_task(update_player_list_and_forum_comments())
-        bot.loop.create_task(monitor_replies())
-        bot.loop.create_task(send_support_message())
-        # bot.loop.create_task(they_gotta_go())  # Add this line
-        tasks_started = True
+            await asyncio.sleep(300)  # Keep 5-minute check interval
+            
+        except Exception as e:
+            print(f"Error in update_player_list_and_forum_comments: {e}")
+            await asyncio.sleep(60)  # Wait a minute before retrying on error
 
 # Run the bot
 bot.run(DISCORD_TOKEN)
