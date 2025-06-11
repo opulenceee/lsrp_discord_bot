@@ -108,8 +108,12 @@ bot = CustomBot(command_prefix='!', intents=intents)
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
     try:
+        # Force sync commands
+        logger.info("Starting command tree sync...")
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} commands globally")
+        
         # Start Discord log worker if needed
         if LOG_WEBHOOK_URL and hasattr(logger, 'discord_log_queue'):
             if not hasattr(bot, '_discord_log_worker_started'):
@@ -127,7 +131,7 @@ async def on_ready():
         # Get all guilds the bot is actually in
         bot_guilds = {str(g.id): g.name for g in bot.guilds}
         
-        await stream_log_history(bot, limit=100)
+        await stream_log_history(bot, limit=10, time_limit_hours=1)
 
         # Log each configured guild with its status
         for guild_id, config in settings.items():
@@ -152,6 +156,7 @@ async def on_ready():
                         await channel.send(embed=embed)
             
     except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
         print(f"Failed to sync commands: {e}")
 
     # Check if config exists on startup
@@ -228,14 +233,38 @@ async def unblock_guild(interaction: discord.Interaction, guild_id: str):
     # Debugging step to confirm guilds after unblocking
     await interaction.followup.send(f"Blocked guilds after unblocking: {blocked_guilds}")
 
-# Global check to prevent commands in blocked guilds, except unblock_guild
+# Global check to prevent commands in blocked guilds and enforce channel restrictions
 async def check_guild(interaction: discord.Interaction) -> bool:
+    # Check if guild is blocked
     if interaction.guild and interaction.guild.id in blocked_guilds:
         await interaction.response.send_message(
             f"Commands are disabled for **{interaction.guild.name}**. "
             "Please contact the bot owner if you think this is an error."
         ) 
         return False  # Block this guild
+    
+    # Check if command is in the correct channel (skip for setup and remove commands)
+    if interaction.command and interaction.command.name not in ["setup", "remove"]:
+        guild_id = str(interaction.guild.id)
+        settings = load_config()
+        
+        # If guild is configured, check if command is in the right channel
+        if guild_id in settings:
+            configured_channel_id = settings[guild_id].get("notification_channel_id")
+            if configured_channel_id and interaction.channel.id != configured_channel_id:
+                await interaction.response.send_message(
+                    f"This command can only be used in <#{configured_channel_id}>.",
+                    ephemeral=True
+                )
+                return False
+        # If guild is not configured and it's not setup/remove command, block it
+        else:
+            await interaction.response.send_message(
+                "This bot is not configured for this server. Please use `/setup` to configure it first.",
+                ephemeral=True
+            )
+            return False
+    
     return True  # Allow the command
 
 
@@ -425,10 +454,6 @@ async def show_settings(interaction: discord.Interaction):
     guild_id = str(interaction.guild.id)
     settings = load_config()  # Load existing settings
 
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
-        return
-
     # Check if settings exist for the guild
     if guild_id in settings:
         notification_channel_id = settings[guild_id].get("notification_channel_id")
@@ -447,10 +472,6 @@ async def latest(interaction: discord.Interaction):
     """Displays the last reply and its author, date."""
     settings = load_config()
     guild_id = str(interaction.guild.id)
-
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
-        return
     
     if guild_id in settings and settings[guild_id]["topic_id"]:
         topic_id = settings[guild_id]["topic_id"]
@@ -488,10 +509,6 @@ async def thread(interaction: discord.Interaction):
     settings = load_config()
     guild_id = str(interaction.guild.id)
 
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
-        return
-
     if guild_id in settings and settings[guild_id]["topic_id"]:
         topic_id = settings[guild_id]["topic_id"]
         replies = load_forum_data(topic_id)  # Load replies for the specific topic_id
@@ -514,12 +531,6 @@ async def thread(interaction: discord.Interaction):
 @bot.tree.command(name="admins", description="Show online administrators")
 @app_commands.check(check_guild)
 async def admins(interaction: discord.Interaction):
-    guild_id = str(interaction.guild_id)
-
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
-        return
-
     player_data = load_player_data()
     embed = discord.Embed(title="Online Admins", color=discord.Color.red())
     
@@ -541,12 +552,6 @@ async def admins(interaction: discord.Interaction):
 @bot.tree.command(name="testers", description="Show online testers")
 @app_commands.check(check_guild)
 async def testers(interaction: discord.Interaction):
-    guild_id = str(interaction.guild_id)
-
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.")
-        return
-
     player_data = load_player_data()
     embed = discord.Embed(title="Online Testers", color=discord.Color.red())
 
@@ -573,13 +578,6 @@ async def online(interaction: discord.Interaction):
         # Check if interaction is still valid before any response
         if interaction.response.is_done():
             logger.debug("Interaction already responded to in /online")
-            return
-            
-        guild_id = str(interaction.guild_id)
-
-        # Check configuration before deferring
-        if not is_configured(guild_id):
-            await interaction.response.send_message("This bot is not configured for this server. Please use /setup to configure it.", ephemeral=True)
             return
 
         # Defer the interaction to prevent timeout
@@ -640,12 +638,6 @@ async def online(interaction: discord.Interaction):
 @app_commands.check(check_guild)
 @app_commands.describe(name="The player's full name in the format Firstname_Lastname")
 async def check(interaction: discord.Interaction, name: str = None):
-    guild_id = str(interaction.guild.id)
-
-    if not is_configured(guild_id):
-        await interaction.response.send_message("This bot is not configured for this server. Please run `/setup` to configure it.")
-        return
-    
     player_data = load_player_data()
     embed = discord.Embed(title="Player Status Check", color=discord.Color.red())
 
@@ -870,6 +862,7 @@ async def monitor_server_status():
 
 @bot.tree.command(name="status", description="Check server status")
 @commands.is_owner()  # Only bot owner can use this command
+@app_commands.check(check_guild)
 async def status(interaction: discord.Interaction):
     """Check current server status."""
     is_up = check_server_status()
