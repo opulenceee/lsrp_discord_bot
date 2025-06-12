@@ -17,7 +17,8 @@ import sys
 import aiohttp
 import threading
 import queue
-from channel_streamer import handle_log_message, stream_log_history
+import time
+from channel_streamer import handle_log_message, stream_log_history, debug_channel_config
 
 
 
@@ -141,19 +142,7 @@ async def on_ready():
             else:
                 logger.info(f"- {guild_name} (Bot not in server)")
         
-        # Send startup notification to all configured channels
-        if settings:
-            for server_id, config in settings.items():
-                if 'channel_id' in config:
-                    channel = bot.get_channel(int(config['channel_id']))
-                    if channel:
-                        embed = discord.Embed(
-                            title="Bot Status",
-                            description="Bot is now online and monitoring!",
-                            color=discord.Color.green()
-                        )
-                        embed.add_field(name="Active Features", value="• Forum Monitoring\n• Player List Updates\n• Server Status Monitoring\n• Watchlist Alerts", inline=False)
-                        await channel.send(embed=embed)
+
             
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
@@ -166,7 +155,7 @@ async def on_ready():
         bot.loop.create_task(monitor_replies())
         bot.loop.create_task(monitor_server_status())
         bot.loop.create_task(check_watchlists())
-        bot.loop.create_task(they_gotta_go())
+        # bot.loop.create_task(they_gotta_go())  # DISABLED - using watchlist instead
 
 # Loading blocked guilds from file
 def load_blocked_guilds():
@@ -742,83 +731,114 @@ def set_guild_watchlist(guild_id, watchlist):
 
 async def check_watchlists():
     """Check all guilds' watchlists and send notifications to their channels."""
+    # Global status tracking like "They Gotta Go" system
+    global watchlist_last_online_status
+    
     while True:
         try:
             watchlists = load_watchlists()
             player_data = load_player_data()
-            current_players = {p['characterName'] for p in player_data.get('players', [])}
+            online_players = [player["characterName"] for player in player_data.get("players", [])]
             settings = load_config()
+            
             for guild_id, watchlist in watchlists.items():
+                # Initialize status tracking for this guild if not exists
+                if guild_id not in watchlist_last_online_status:
+                    watchlist_last_online_status[guild_id] = {}
+                
+                # Initialize status for new players in watchlist
+                for player in watchlist:
+                    if player not in watchlist_last_online_status[guild_id]:
+                        watchlist_last_online_status[guild_id][player] = False
+                
                 channel_id = None
                 if guild_id in settings:
                     channel_id = settings[guild_id].get('notification_channel_id')
                 if not channel_id:
                     continue
+                    
                 channel = bot.get_channel(int(channel_id))
                 if not channel:
                     continue
+                
+                # Use exact same logic as "They Gotta Go"
                 for player in watchlist:
-                    if player in current_players:
+                    # Check if player is online AND was not online before
+                    if player in online_players and not watchlist_last_online_status[guild_id][player]:
                         try:
-                            await channel.send(f"**{player}** is now online!")
+                            await channel.send(f"@everyone **{player}** is now online!")
+                            logger.info(f"Watchlist notification sent for {player} in guild {guild_id}")
                         except Exception as e:
-                            print(f"Error sending watchlist notification: {e}")
+                            logger.error(f"Error sending watchlist notification: {e}")
+                        # Set status to True (online)
+                        watchlist_last_online_status[guild_id][player] = True
+                    # If player is not online anymore, set status to False
+                    elif player not in online_players and watchlist_last_online_status[guild_id][player]:
+                        watchlist_last_online_status[guild_id][player] = False
+                    
             await asyncio.sleep(30)
         except Exception as e:
-            print(f"Error checking watchlists: {e}")
+            logger.error(f"Error checking watchlists: {e}")
             await asyncio.sleep(30)
 
-# They Gotta Go Monitoring
-they_gotta_go_names = []
-THEY_GOTTA_GO_CHANNEL = ''
-THEY_GOTTA_GO_GUILD_ID = ''
-last_online_status = {}
+# Watchlist Global Status Tracking (like "They Gotta Go" system)
+watchlist_last_online_status = {}  # Format: {guild_id: {player_name: is_online}}
 
-async def they_gotta_go():
-    """Monitor specific players and send notifications when they come online."""
-    print("they_gotta_go has been started")
-    global last_online_status
+# They Gotta Go Monitoring - DISABLED (using watchlist feature instead)
+# they_gotta_go_names = []
+# THEY_GOTTA_GO_CHANNEL = ''
+# THEY_GOTTA_GO_GUILD_ID = ''
+# last_online_status = {}
 
-    while True:
-        if not last_online_status:
-            last_online_status.update({about_to_die.replace(" ", "_"): False for about_to_die in they_gotta_go_names})
+# async def they_gotta_go():
+#     """Monitor specific players and send notifications when they come online."""
+#     print("they_gotta_go has been started")
+#     global last_online_status
 
-        player_data = load_player_data()
-        online_players = [player["characterName"] for player in player_data.get("players", [])]
+#     while True:
+#         if not last_online_status:
+#             last_online_status.update({about_to_die.replace(" ", "_"): False for about_to_die in they_gotta_go_names})
 
-        if THEY_GOTTA_GO_CHANNEL:
-            try:
-                channel = bot.get_channel(int(THEY_GOTTA_GO_CHANNEL))
-            except ValueError:
-                print(f"Invalid channel ID: {THEY_GOTTA_GO_CHANNEL}")
-                await asyncio.sleep(30)
-                continue
-        else:
-            print("THEY_GOTTA_GO_CHANNEL is empty!")
-            await asyncio.sleep(30)
-            continue
+#         player_data = load_player_data()
+#         online_players = [player["characterName"] for player in player_data.get("players", [])]
 
-        if channel is None:
-            print(f"Failed to retrieve channel with ID {THEY_GOTTA_GO_CHANNEL}")
-            await asyncio.sleep(30)
-            continue
+#         if THEY_GOTTA_GO_CHANNEL:
+#             try:
+#                 channel = bot.get_channel(int(THEY_GOTTA_GO_CHANNEL))
+#             except ValueError:
+#                 print(f"Invalid channel ID: {THEY_GOTTA_GO_CHANNEL}")
+#                 await asyncio.sleep(30)
+#                 continue
+#         else:
+#             # Only log this once per hour to avoid spam
+#             if not hasattr(they_gotta_go, '_last_empty_warning') or \
+#                (time.time() - they_gotta_go._last_empty_warning) > 3600:
+#                 print("THEY_GOTTA_GO_CHANNEL is empty! Configure it to enable this feature.")
+#                 they_gotta_go._last_empty_warning = time.time()
+#             await asyncio.sleep(30)
+#             continue
 
-        if channel.guild.id != int(THEY_GOTTA_GO_GUILD_ID):
-            print(f"Channel does not belong to the specified guild ID {THEY_GOTTA_GO_GUILD_ID}")
-            await asyncio.sleep(30)
-            continue
+#         if channel is None:
+#             print(f"Failed to retrieve channel with ID {THEY_GOTTA_GO_CHANNEL}")
+#             await asyncio.sleep(30)
+#             continue
 
-        for about_to_die in they_gotta_go_names:
-            about_to_die_formatted = about_to_die.replace(" ", "_")
-            print(f"Checking player: {about_to_die_formatted}")
+#         if channel.guild.id != int(THEY_GOTTA_GO_GUILD_ID):
+#             print(f"Channel does not belong to the specified guild ID {THEY_GOTTA_GO_GUILD_ID}")
+#             await asyncio.sleep(30)
+#             continue
 
-            if about_to_die_formatted in online_players and not last_online_status[about_to_die_formatted]:
-                await channel.send(f"@everyone {about_to_die} has just logged in!")
-                last_online_status[about_to_die_formatted] = True
-            elif about_to_die_formatted not in online_players and last_online_status[about_to_die_formatted]:
-                last_online_status[about_to_die_formatted] = False
+#         for about_to_die in they_gotta_go_names:
+#             about_to_die_formatted = about_to_die.replace(" ", "_")
+#             print(f"Checking player: {about_to_die_formatted}")
 
-        await asyncio.sleep(30)
+#             if about_to_die_formatted in online_players and not last_online_status[about_to_die_formatted]:
+#                 await channel.send(f"@everyone {about_to_die} has just logged in!")
+#                 last_online_status[about_to_die_formatted] = True
+#             elif about_to_die_formatted not in online_players and last_online_status[about_to_die_formatted]:
+#                 last_online_status[about_to_die_formatted] = False
+
+#         await asyncio.sleep(30)
 
 # Server Status Tracking
 def check_server_status():
@@ -881,8 +901,12 @@ async def status(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+def is_owner(interaction: discord.Interaction) -> bool:
+    """Check if the user is the bot owner."""
+    return interaction.user.id == bot.owner_id
+
 @bot.tree.command(name="watch", description="Manage your player watchlist")
-@commands.is_owner()  # Only bot owner can use this command
+@app_commands.check(is_owner)  # Only bot owner can use this command
 @app_commands.check(check_guild)
 @app_commands.describe(
     action="Action to perform: add, remove, edit, or list",
@@ -912,18 +936,28 @@ async def watch(
         names = [n.strip() for n in player.replace(",", " ").split() if n.strip()]
         added = []
         already = []
+        invalid_format = []
+        
         for name in names:
+            # Validate name format (must contain exactly one underscore)
+            if "_" not in name or name.count("_") != 1:
+                invalid_format.append(name)
+                continue
+                
             if name not in watchlist:
                 watchlist.append(name)
                 added.append(name)
             else:
                 already.append(name)
+                
         set_guild_watchlist(guild_id, watchlist)
         msg = []
         if added:
             msg.append(f"Added to this server's watchlist: {', '.join(added)}.")
         if already:
             msg.append(f"Already in watchlist: {', '.join(already)}.")
+        if invalid_format:
+            msg.append(f"Invalid format (use FirstName_LastName): {', '.join(invalid_format)}.")
         if not msg:
             msg = ["No valid names provided."]
         await interaction.followup.send(" ".join(msg), ephemeral=True)
@@ -982,8 +1016,20 @@ async def watch(
             await interaction.followup.send(embed=embed, ephemeral=True)
     elif action_value == "list":
         if watchlist:
+            # Get current online players to show status
+            player_data = load_player_data()
+            online_players = [player["characterName"] for player in player_data.get("players", [])]
+            
+            # Format watchlist with online status
+            formatted_list = []
+            for name in watchlist:
+                if name in online_players:
+                    formatted_list.append(f"{name} **(online)**")
+                else:
+                    formatted_list.append(name)
+            
             embed = discord.Embed(title=f"Watchlist for this server", color=discord.Color.red())
-            embed.description = "\n".join(watchlist)
+            embed.description = "\n".join(formatted_list)
         else:
             embed = discord.Embed(title="Watchlist is Empty", color=discord.Color.red())
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -1051,31 +1097,44 @@ async def monitor_replies():
                 continue
 
             for server_id, config in settings.items():
-                if 'topic_id' in config and 'channel_id' in config:
+                if 'topic_id' in config and 'notification_channel_id' in config:
                     topic_id = config['topic_id']
-                    channel_id = config['channel_id']
+                    channel_id = config['notification_channel_id']
                     
-                    # Get the latest replies
-                    replies = fetch_forum_replies(topic_id)
-                    if not replies:
+                    # Load previously saved replies to compare
+                    old_replies = load_forum_data(topic_id)
+                    old_reply_ids = {reply.get('id') for reply in old_replies} if old_replies else set()
+                    
+                    # Get total pages first
+                    total_pages = fetch_total_pages(topic_id, FORUMS)
+                    if not total_pages or total_pages <= 0:
+                        continue
+                    
+                    # Get the latest replies from the last page
+                    latest_replies = fetch_forum_replies(topic_id, FORUMS, total_pages)
+                    if not latest_replies:
                         continue
 
-                    # Get the latest reply
-                    latest_reply = replies[0]
+                    # Check for new replies by comparing IDs
+                    new_replies = []
+                    for reply in latest_replies:
+                        reply_id = reply.get('id')
+                        if reply_id and reply_id not in old_reply_ids:
+                            new_replies.append(reply)
                     
-                    # Send notification for the latest reply
-                    await send_notification(latest_reply, channel_id)
+                    # Send notifications for new replies
+                    for new_reply in new_replies:
+                        await send_notification(new_reply, channel_id)
 
-            await asyncio.sleep(60)  # Check every minute
+            await asyncio.sleep(240)  # Check every 4 minutes to match forum_monitor frequency
         except Exception as e:
-            print(f"Error in monitor_replies: {e}")
+            logger.error(f"Error in monitor_replies: {e}")
             await asyncio.sleep(60)  # Wait before retrying
 
 async def send_notification(new_reply, channel_id):
     """Send a notification to the specified channel when a new reply is detected."""
     channel = bot.get_channel(int(channel_id))
     if not channel:
-        print(f"Notification channel {channel_id} not found.")
         return
     
     content, media_message = clean_html(new_reply.get("content", "No content available."))
@@ -1103,7 +1162,6 @@ async def send_notification(new_reply, channel_id):
     embed.add_field(name="Link", value=link, inline=False)
 
     await channel.send(embed=embed)
-    print(f"Notification sent to channel {channel_id}.")
 
 process = None
 forum_process = None
@@ -1117,17 +1175,14 @@ async def update_player_list_and_forum_comments():
         try:
             # Start the setup_db script if it's not running
             if process is None:
-                print("Starting UCP monitoring process")
                 process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
             
             # Start the forum_monitor.py script if it's not running
             if forum_process is None:
-                print("Starting forum monitoring process")
                 forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
             
             # Check if processes are still running
             if process and process.poll() is not None:
-                print("UCP monitoring process died, restarting...")
                 try:
                     # Clean up any zombie Chrome processes before restarting
                     subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
@@ -1139,15 +1194,16 @@ async def update_player_list_and_forum_comments():
                 process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
             
             if forum_process and forum_process.poll() is not None:
-                print("Forum monitoring process died, restarting...")
                 await asyncio.sleep(30)  # Increased from 10 to 30 seconds
                 forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
             
             await asyncio.sleep(300)  # Keep 5-minute check interval
             
         except Exception as e:
-            print(f"Error in update_player_list_and_forum_comments: {e}")
+            logger.error(f"Error in update_player_list_and_forum_comments: {e}")
             await asyncio.sleep(60)  # Wait a minute before retrying on error
+
+
 
 # Run the bot
 bot.run(DISCORD_TOKEN)
