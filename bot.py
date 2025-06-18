@@ -18,7 +18,7 @@ import aiohttp
 import threading
 import queue
 import time
-from channel_streamer import handle_log_message, stream_log_history, debug_channel_config
+
 
 
 
@@ -132,7 +132,7 @@ async def on_ready():
         # Get all guilds the bot is actually in
         bot_guilds = {str(g.id): g.name for g in bot.guilds}
         
-        await stream_log_history(bot, limit=10, time_limit_hours=1)
+
 
         # Log each configured guild with its status
         for guild_id, config in settings.items():
@@ -901,6 +901,8 @@ async def status(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
+
 def is_owner(interaction: discord.Interaction) -> bool:
     """Check if the user is the bot owner."""
     return interaction.user.id == bot.owner_id
@@ -926,7 +928,9 @@ async def watch(
     player: str = None
 ):
     try:
-        await interaction.response.defer(ephemeral=True)
+        # Make list action public, others ephemeral
+        is_ephemeral = action.value != "list"
+        await interaction.response.defer(ephemeral=is_ephemeral)
     except discord.errors.NotFound:
         return  # Interaction expired or already responded to
     guild_id = str(interaction.guild_id)
@@ -1032,14 +1036,13 @@ async def watch(
             embed.description = "\n".join(formatted_list)
         else:
             embed = discord.Embed(title="Watchlist is Empty", color=discord.Color.red())
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=False)  # Make it public
     else:
         await interaction.followup.send("Invalid action. Use 'add', 'remove', 'edit', or 'list'.", ephemeral=True)
 
 
 @bot.event
 async def on_message(message):
-    await handle_log_message(message)
     await bot.process_commands(message)  
 
 @bot.event
