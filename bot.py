@@ -152,7 +152,7 @@ async def on_ready():
     settings = load_config()
     if settings:
         bot.loop.create_task(update_player_list_and_forum_comments())
-        bot.loop.create_task(monitor_replies())
+        bot.loop.create_task(monitor_replies())  # RE-ENABLED - reads JSON files updated by forum_monitor.py
         bot.loop.create_task(monitor_server_status())
         bot.loop.create_task(check_watchlists())
         # bot.loop.create_task(they_gotta_go())  # DISABLED - using watchlist instead
@@ -1091,7 +1091,34 @@ async def on_command_error(ctx, error):
         await ctx.send(f"An error occurred: {str(error)}")
 
 async def monitor_replies():
-    """Monitor forum replies and send notifications."""
+    """Monitor forum replies and send notifications based on files updated by forum_monitor.py."""
+    # Track last seen reply IDs per topic to avoid duplicate notifications
+    last_seen_file = os.path.join(DATA_DIR, 'last_seen_replies.json')
+    
+    # Load previously seen reply IDs from file (survives bot restarts)
+    def load_last_seen():
+        if os.path.exists(last_seen_file):
+            try:
+                with open(last_seen_file, 'r') as f:
+                    data = json.load(f)
+                    # Convert lists back to sets and ensure IDs are integers
+                    return {topic_id: set(int(reply_id) for reply_id in reply_ids) for topic_id, reply_ids in data.items()}
+            except (json.JSONDecodeError, Exception):
+                pass
+        return {}
+    
+    # Save seen reply IDs to file
+    def save_last_seen(last_seen_reply_ids):
+        try:
+            # Convert sets to lists for JSON serialization, ensure integers
+            data = {topic_id: list(reply_ids) for topic_id, reply_ids in last_seen_reply_ids.items()}
+            with open(last_seen_file, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.error(f"Error saving last seen replies: {e}")
+    
+    last_seen_reply_ids = load_last_seen()
+    
     while True:
         try:
             settings = load_config()
@@ -1104,32 +1131,32 @@ async def monitor_replies():
                     topic_id = config['topic_id']
                     channel_id = config['notification_channel_id']
                     
-                    # Load previously saved replies to compare
-                    old_replies = load_forum_data(topic_id)
-                    old_reply_ids = {reply.get('id') for reply in old_replies} if old_replies else set()
+                    # Initialize tracking for this topic
+                    if topic_id not in last_seen_reply_ids:
+                        last_seen_reply_ids[topic_id] = set()
                     
-                    # Get total pages first
-                    total_pages = fetch_total_pages(topic_id, FORUMS)
-                    if not total_pages or total_pages <= 0:
+                    # Load current replies from file (updated by forum_monitor.py)
+                    current_replies = load_forum_data(topic_id)
+                    if not current_replies:
                         continue
                     
-                    # Get the latest replies from the last page
-                    latest_replies = fetch_forum_replies(topic_id, FORUMS, total_pages)
-                    if not latest_replies:
-                        continue
-
                     # Check for new replies by comparing IDs
-                    new_replies = []
-                    for reply in latest_replies:
-                        reply_id = reply.get('id')
-                        if reply_id and reply_id not in old_reply_ids:
-                            new_replies.append(reply)
+                    current_reply_ids = {int(reply.get('id')) for reply in current_replies if reply.get('id') and str(reply.get('id')).isdigit()}
+                    new_reply_ids = current_reply_ids - last_seen_reply_ids[topic_id]
                     
                     # Send notifications for new replies
-                    for new_reply in new_replies:
-                        await send_notification(new_reply, channel_id)
+                    for reply in current_replies:
+                        reply_id = reply.get('id')
+                        if reply_id and str(reply_id).isdigit() and int(reply_id) in new_reply_ids:
+                            await send_notification(reply, channel_id)
+                    
+                    # Update tracking
+                    last_seen_reply_ids[topic_id] = current_reply_ids
+            
+            # Save the updated tracking to file
+            save_last_seen(last_seen_reply_ids)
 
-            await asyncio.sleep(240)  # Check every 4 minutes to match forum_monitor frequency
+            await asyncio.sleep(60)  # Check every minute for file updates
         except Exception as e:
             logger.error(f"Error in monitor_replies: {e}")
             await asyncio.sleep(60)  # Wait before retrying
@@ -1167,12 +1194,12 @@ async def send_notification(new_reply, channel_id):
     await channel.send(embed=embed)
 
 process = None
-forum_process = None
+forum_process = None  # RE-ENABLED - using separate forum_monitor.py for better architecture
 
 async def update_player_list_and_forum_comments():
     """Update player list and forum comments periodically."""
     global process
-    global forum_process
+    global forum_process  # RE-ENABLED - using separate forum_monitor.py for better architecture
     
     while True:
         try:
