@@ -153,7 +153,6 @@ async def on_ready():
     if settings:
         bot.loop.create_task(update_player_list_and_forum_comments())
         bot.loop.create_task(monitor_replies())  # RE-ENABLED - reads JSON files updated by forum_monitor.py
-        bot.loop.create_task(monitor_server_status())
         bot.loop.create_task(check_watchlists())
         # bot.loop.create_task(they_gotta_go())  # DISABLED - using watchlist instead
 
@@ -840,66 +839,7 @@ watchlist_last_online_status = {}  # Format: {guild_id: {player_name: is_online}
 
 #         await asyncio.sleep(30)
 
-# Server Status Tracking
-def check_server_status():
-    """Check if the server is responding."""
-    try:
-        response = requests.get("https://ucp.ls-rp.com/", timeout=10)
-        return response.status_code == 200
-    except:
-        return False
 
-async def monitor_server_status():
-    """Monitor server status and send notifications."""
-    last_status = True  # Assume server is up initially
-    while True:
-        try:
-            current_status = check_server_status()
-            
-            # If status changed
-            if current_status != last_status:
-                settings = load_config()
-                for guild_id, config in settings.items():
-                    channel_id = config.get("notification_channel_id")
-                    if channel_id:
-                        try:
-                            channel = bot.get_channel(int(channel_id))
-                            if channel:
-                                if current_status:
-                                    await channel.send("<@804688024704253986> Server is back online! ✅")
-                                else:
-                                    await channel.send("<@804688024704253986> Server appears to be down! ❌")
-                        except Exception as e:
-                            print(f"Error sending status notification to channel {channel_id}: {e}")
-                
-                last_status = current_status
-            
-            await asyncio.sleep(60)  # Check every minute
-            
-        except Exception as e:
-            print(f"Error monitoring server status: {e}")
-            await asyncio.sleep(60)
-
-@bot.tree.command(name="status", description="Check server status")
-@commands.is_owner()  # Only bot owner can use this command
-@app_commands.check(check_guild)
-async def status(interaction: discord.Interaction):
-    """Check current server status."""
-    is_up = check_server_status()
-    
-    embed = discord.Embed(title="Server Status", color=discord.Color.green() if is_up else discord.Color.red())
-    embed.description = "Server is online! ✅" if is_up else "Server is down! ❌"
-    
-    # Add uptime information if available
-    uptime_file = os.path.join(DATA_DIR, 'uptime.json')
-    if os.path.exists(uptime_file):
-        with open(uptime_file, 'r') as f:
-            uptime_data = json.load(f)
-            last_restart = datetime.fromisoformat(uptime_data.get('last_restart', datetime.utcnow().isoformat()))
-            uptime = datetime.utcnow() - last_restart
-            embed.add_field(name="Uptime", value=str(uptime).split('.')[0], inline=True)
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 
@@ -1203,28 +1143,46 @@ async def update_player_list_and_forum_comments():
     
     while True:
         try:
-            # Start the setup_db script if it's not running
-            if process is None:
-                process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
-            
-            # Start the forum_monitor.py script if it's not running
-            if forum_process is None:
-                forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
-            
-            # Check if processes are still running
-            if process and process.poll() is not None:
+            # Check and manage setup_db process
+            if process is None or process.poll() is not None:
+                # Clean up the old process if it exists
+                if process is not None:
+                    try:
+                        process.terminate()
+                        process.wait(timeout=5)
+                    except:
+                        pass
+                
+                # Kill any existing setup_db processes to prevent duplicates
                 try:
-                    # Clean up any zombie Chrome processes before restarting
-                    subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+                    subprocess.run(['pkill', '-f', 'setup_db.py'], capture_output=True, timeout=10)
+                    await asyncio.sleep(2)  # Wait for cleanup
                 except:
                     pass
                 
-                # Wait a bit before restarting to avoid rapid restarts
-                await asyncio.sleep(60)  # Increased from 30 to 60 seconds
+                # Start new process
+                logger.info("Starting setup_db.py process")
                 process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'setup_db.py'])
             
-            if forum_process and forum_process.poll() is not None:
-                await asyncio.sleep(30)  # Increased from 10 to 30 seconds
+            # Check and manage forum_monitor process
+            if forum_process is None or forum_process.poll() is not None:
+                # Clean up the old process if it exists
+                if forum_process is not None:
+                    try:
+                        forum_process.terminate()
+                        forum_process.wait(timeout=5)
+                    except:
+                        pass
+                
+                # Kill any existing forum_monitor processes to prevent duplicates
+                try:
+                    subprocess.run(['pkill', '-f', 'forum_monitor.py'], capture_output=True, timeout=10)
+                    await asyncio.sleep(2)  # Wait for cleanup
+                except:
+                    pass
+                
+                # Start new process
+                logger.info("Starting forum_monitor.py process")
                 forum_process = subprocess.Popen(['/opt/lsrp/venv/bin/python', 'forum_monitor.py'])
             
             await asyncio.sleep(300)  # Keep 5-minute check interval
@@ -1233,7 +1191,52 @@ async def update_player_list_and_forum_comments():
             logger.error(f"Error in update_player_list_and_forum_comments: {e}")
             await asyncio.sleep(60)  # Wait a minute before retrying on error
 
+async def cleanup_processes():
+    """Clean up subprocess when bot shuts down."""
+    global process, forum_process
+    
+    logger.info("Cleaning up processes...")
+    
+    # Clean up setup_db process
+    if process is not None:
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+            logger.info("setup_db.py process terminated")
+        except:
+            try:
+                process.kill()
+                logger.info("setup_db.py process killed")
+            except:
+                pass
+    
+    # Clean up forum_monitor process
+    if forum_process is not None:
+        try:
+            forum_process.terminate()
+            forum_process.wait(timeout=5)
+            logger.info("forum_monitor.py process terminated")
+        except:
+            try:
+                forum_process.kill()
+                logger.info("forum_monitor.py process killed")
+            except:
+                pass
 
+@bot.event
+async def on_disconnect():
+    """Handle bot disconnect."""
+    logger.info("Bot disconnected")
+    await cleanup_processes()
 
 # Run the bot
-bot.run(DISCORD_TOKEN)
+try:
+    bot.run(DISCORD_TOKEN)
+except KeyboardInterrupt:
+    logger.info("Bot stopped by user")
+    asyncio.run(cleanup_processes())
+except Exception as e:
+    logger.error(f"Bot crashed: {e}")
+    asyncio.run(cleanup_processes())
+finally:
+    asyncio.run(cleanup_processes())
